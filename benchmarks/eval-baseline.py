@@ -97,9 +97,8 @@ def init_mixtral_offload():
 
     device = torch.device("cuda:0")
 
-    ##### Change this to 5 if you have only 12 GB of GPU VRAM #####
-    # offload_per_layer = 4
-    offload_per_layer = 6
+    #as the offload_per_layer goes up, for sure the vram usage goes down
+    offload_per_layer = 5
     ###############################################################
 
     num_experts = config.num_local_experts

@@ -28,6 +28,7 @@ echo "=== Mixtral-offloading baseline (带 PyTorch Profiler) ==="
   python eval-baseline.py \
     --framework mixtral-offloading \
     --model "${MODEL}" \
+    --quantized True\
     --profile
 )
 
