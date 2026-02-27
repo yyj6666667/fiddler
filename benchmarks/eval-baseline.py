@@ -80,7 +80,13 @@ def init_mixtral_offload():
         if not quantized:
             state_path = "Mixtral-8x7B-v0.1"
         else:
-            state_path = "Mixtral-8x7B-v0.1-offloading-demo"
+            # 量化模式优先用预量化 demo 目录；若不存在则与 Fiddler 共用同一权重目录
+            demo_dir = "Mixtral-8x7B-v0.1-offloading-demo"
+            state_path = demo_dir if os.path.isdir(demo_dir) else "Mixtral-8x7B-v0.1"
+            if state_path != demo_dir:
+                logging.warning(
+                    f"未找到 {demo_dir}，量化模式使用 Mixtral-8x7B-v0.1 权重目录（与 Fiddler 共用）。"
+                )
 
     config = AutoConfig.from_pretrained(model_name)
 
