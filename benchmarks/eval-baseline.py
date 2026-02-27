@@ -2,6 +2,7 @@
 from transformers.models.mixtral.modeling_mixtral import MixtralSparseMoeBlock
 from transformers import AutoConfig, AutoTokenizer, AutoModelForCausalLM
 import torch
+from torch.profiler import profile, record_function, ProfilerActivity
 import numpy
 import os
 import sys
@@ -159,8 +160,10 @@ def eval(model):
 
     tokenizer = AutoTokenizer.from_pretrained(args.model)
 
-    for input_token in [16, 32, 64, 128]:
-        for output_token in [16, 32, 64, 128, 256, 512]:
+    did_profile = False
+
+    for input_token in [128]:
+        for output_token in [512]:
             idx_text = 0
             time_sum = 0
             num_tokens = 0
@@ -177,16 +180,59 @@ def eval(model):
                 input_ids = tokenizer.encode(
                     text, return_tensors='pt').to(device)
                 start_time = time.time()
-                result = model.generate(
-                    input_ids=input_ids[:, :input_token],
-                    max_new_tokens=output_token,
-                    min_new_tokens=output_token,
-                    do_sample=True,
-                    temperature=0.9,
-                    top_p=0.9,
-                    pad_token_id=tokenizer.eos_token_id,
-                    return_dict_in_generate=True
-                )
+
+                # 只对第一次推理做一次完整的 PyTorch Profiler，避免开销太大
+                if args.profile and (not did_profile):
+                    with profile(
+                        activities=[ProfilerActivity.CPU, ProfilerActivity.CUDA]
+                        if torch.cuda.is_available()
+                        else [ProfilerActivity.CPU],
+                        record_shapes=True,
+                        profile_memory=True,
+                        with_stack=True,
+                    ) as prof:
+                        with record_function("model_generate"):
+                            result = model.generate(
+                                input_ids=input_ids[:, :input_token],
+                                max_new_tokens=output_token,
+                                min_new_tokens=output_token,
+                                do_sample=True,
+                                temperature=0.9,
+                                top_p=0.9,
+                                pad_token_id=tokenizer.eos_token_id,
+                                return_dict_in_generate=True,
+                            )
+
+                    did_profile = True
+
+                    logging.info("PyTorch profiler summary (top 30 by CUDA time):")
+                    logging.info(
+                        "\n"
+                        + prof.key_averages().table(
+                            sort_by="cuda_time_total"
+                            if torch.cuda.is_available()
+                            else "cpu_time_total",
+                            row_limit=30,
+                        )
+                    )
+
+                    trace_path = "mixtral_profiler_trace.json"
+                    prof.export_chrome_trace(trace_path)
+                    logging.info(
+                        f"Chrome trace 已保存到 {trace_path}，可用 chrome://tracing 打开查看。"
+                    )
+                else:
+                    result = model.generate(
+                        input_ids=input_ids[:, :input_token],
+                        max_new_tokens=output_token,
+                        min_new_tokens=output_token,
+                        do_sample=True,
+                        temperature=0.9,
+                        top_p=0.9,
+                        pad_token_id=tokenizer.eos_token_id,
+                        return_dict_in_generate=True,
+                    )
+
                 end_time = time.time()
                 time_sum += end_time - start_time
                 # count the number of tokens in the output
@@ -221,6 +267,11 @@ if __name__ == "__main__":
             'mixtral-offloading',
             'deepspeed-mii'],
         help='Which framework to use for evaluation.')
+    parser.add_argument(
+        '--profile',
+        action='store_true',
+        help='启用 PyTorch Profiler 对第一次推理进行性能分析（同时导出 Chrome trace）。',
+    )
 
     args = parser.parse_args()
 
