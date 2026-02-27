@@ -70,15 +70,15 @@ def init_mixtral_offload():
     # Use the same model identifier/path as fiddler if provided.
     # If args.model points to a local directory, we also use it as state_path
     # (where safetensors weights are stored). Otherwise, fall back to the
-    # original Mixtral-8x7B-Instruct-v0.1 directory created by download.sh.
+    # Mixtral-8x7B-v0.1 directory (same as Fiddler).
     model_name = args.model
     if os.path.isdir(model_name):
         state_path = model_name
     else:
         if not quantized:
-            state_path = "Mixtral-8x7B-Instruct-v0.1"
+            state_path = "Mixtral-8x7B-v0.1"
         else:
-            state_path = "Mixtral-8x7B-Instruct-v0.1-offloading-demo"
+            state_path = "Mixtral-8x7B-v0.1-offloading-demo"
 
     config = AutoConfig.from_pretrained(model_name)
 
@@ -138,11 +138,11 @@ def eval(model):
     device = torch.device("cuda:0")
 
     # Use dataset colocated with state_path if args.model is a local directory,
-    # otherwise fall back to the original baseline path.
+    # otherwise use benchmarks/ShareGPT (same as latency.py / Fiddler).
     if os.path.isdir(args.model):
         path_json = os.path.join(args.model, 'ShareGPT_V3_unfiltered_cleaned_split.json')
     else:
-        path_json = 'Mixtral-8x7B-Instruct-v0.1/ShareGPT_V3_unfiltered_cleaned_split.json'
+        path_json = os.path.join(os.path.dirname(__file__), 'ShareGPT_V3_unfiltered_cleaned_split.json')
     with open(path_json, 'r') as f:
         data = json.load(f)
     texts = []
@@ -258,7 +258,7 @@ if __name__ == "__main__":
     parser.add_argument(
         '--model',
         type=str,
-        default='mistralai/Mixtral-8x7B-Instruct-v0.1',
+        default='mistralai/Mixtral-8x7B-v0.1',
         help='Model path or HF repo id to use for both fiddler and mixtral-offloading baselines.',
     )
     parser.add_argument(

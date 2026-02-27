@@ -32,7 +32,7 @@ class FiddlerMixtral:
         self.beam_width = args.beam_width
         self.n_layer = len(self.model.layers)
         self.n_expert = len(self.model.layers[0].block_sparse_moe.experts)
-       
+
 
         # TODO: find this value based on device config
         self.latency_cpu = 7
@@ -377,7 +377,7 @@ class FiddlerMixtral:
 
         self.cnt_expert_hit = 0
         self.cnt_expert_all = 0
-        
+
         input_ids, position_ids = self.tokenize(text)
 
         if input_token is not None:
@@ -461,7 +461,7 @@ class FiddlerMixtral:
         input_id = encodings.input_ids.to(self.dev)
         for i in range(self.beam_width):
             input_ids.append(input_id[0])
-        
+
         input_ids = pad_sequence(
             input_ids, batch_first=True, padding_value=self.tokenizer.pad_token_id
         ).to(self.dev)
@@ -572,7 +572,7 @@ class FiddlerMixtral:
                         cost_per_expert[i_expert, 1] = 0
                         self.cnt_expert_hit += top_2.shape[0]
                     self.cnt_expert_all += top_2.shape[0]
-                
+
                 # second, partition experts processing between CPU and GPU so that we can minimize:
                 # max(sum of cost at CPU, sum of cost at GPU)
                 # greedy algorithm is just as there are only 8 experts for Mixtral

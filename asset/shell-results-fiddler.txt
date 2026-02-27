@@ -1,0 +1,96 @@
+(base) yyj@instance-20260227-080205:~/fiddler$ chmod +x ./test-fiddler.sh && ./test-fiddler.sh
+/opt/conda/lib/python3.10/site-packages/huggingface_hub/file_download.py:949: FutureWarning: `resume_download` is deprecated and will be removed in version 1.0.0. Downloads always resume when possible. If you want to force a new download, use `force_download=True`.
+  warnings.warn(
+Loading checkpoint shards:  26%|██████████████████████████████████████▉                                                              Loading checkpoint shards:  32%|██████████████████████████████████████████████▋                                                      Loading checkpoint shards:  37%|██████████████████████████████████████████████████████▌                                              Loading checkpoint shards:  42%|██████████████████████████████████████████████████████████████▎                                      Loading checkpoint shards:  47%|██████████████████████████████████████████████████████████████████████                               Loading checkpoint shards:  53%|█████████████████████████████████████████████████████████████████████████████▎                       Loading checkpoint shards:  58%|█████████████████████████████████████████████████████████████████████████████████████                Loading checkpoint shards:  63%|████████████████████████████████████████████████████████████████████████████████████████████▊        Loading checkpoint shards:  68%|████████████████████████████████████████████████████████████████████████████████████████████████████▌Loading checkpoint shards:  74%|█████████████████████████████████████████████████████████████████████████████████████████████████████Loading checkpoint shards:  79%|█████████████████████████████████████████████████████████████████████████████████████████████████████Loading checkpoint shards:  84%|█████████████████████████████████████████████████████████████████████████████████████████████████████Loading checkpoint shards:  89%|█████████████████████████████████████████████████████████████████████████████████████████████████████Loading checkpoint shards:  95%|█████████████████████████████████████████████████████████████████████████████████████████████████████Loading checkpoint shards: 100%|█████████████████████████████████████████████████████████████████████████████████████████████████████Loading checkpoint shards: 100%|███████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████| 19/19 [04:48<00:00, 15.21s/it]
+Number of experts on GPU: 30/256
+Model is ready.
+STAGE:2026-02-27 12:32:15 10068:10068 ActivityProfilerController.cpp:312] Completed Stage: Warm Up
+<s> 写一首关于春天的诗
+
+春
+天
+的
+风
+
+春
+天
+的
+风
+
+春
+天
+的
+风
+
+春
+天
+的
+风
+
+春
+天
+的
+风
+
+春
+天
+的
+风
+
+--------------------
+Input: 写一首关于春天的诗
+Output:   春 天 的 风  春 天 的 风  春 天 的 风  春 天 的 风  春 天 的 风  春 天 的 风
+STAGE:2026-02-27 12:37:50 10068:10068 ActivityProfilerController.cpp:318] Completed Stage: Collection
+STAGE:2026-02-27 12:37:51 10068:10068 ActivityProfilerController.cpp:322] Completed Stage: Post Processing
+PyTorch profiler summary for Fiddler (top 30 by time):
+-------------------------------------------------------  ------------  ------------  ------------  ------------  ------------  ------------  ------------  ------------  ------------  ------------  ------------  ------------  ------------  ------------  ------------
+                                                   Name    Self CPU %      Self CPU   CPU total %     CPU total  CPU time avg     Self CUDA   Self CUDA %    CUDA total  CUDA time avg       CPU Mem  Self CPU Mem      CUDA Mem  Self CUDA Mem    # of Calls  Total MFLOPs
+-------------------------------------------------------  ------------  ------------  ------------  ------------  ------------  ------------  ------------  ------------  ------------  ------------  ------------  ------------  ------------  ------------  ------------
+                                       fiddler_generate         1.33%        4.360s       100.00%      328.995s      328.995s       0.000us         0.00%        2.309s        2.309s           0 b    -320.92 Mb      13.62 Mb   -1011.56 Mb             1            --
+                                           aten::matmul         0.07%     245.526ms        96.53%      317.591s       9.995ms       0.000us         0.00%        1.613s      50.748us     147.50 Mb           0 b      80.62 Mb           0 b         31776            --
+                                               aten::mm        96.37%      317.063s        96.41%      317.177s      10.669ms        1.587s        77.44%        1.598s      53.740us     147.50 Mb     147.50 Mb      67.31 Mb      67.31 Mb         29728   1121875.657
+                                           aten::linear         0.05%     150.776ms        96.59%      317.776s      10.689ms       0.000us         0.00%        1.556s      52.357us     147.50 Mb           0 b      67.31 Mb       1.71 Mb         29728            --
+std::enable_if<!(false), void>::type internal::gemvx...         0.00%       0.000us         0.00%       0.000us       0.000us     853.160ms        41.63%     853.160ms     171.111us           0 b           0 b           0 b           0 b          4986            --
+void magma_sgemmEx_kernel<float, __nv_bfloat16, __nv...         0.00%       0.000us         0.00%       0.000us       0.000us     725.341ms        35.40%     725.341ms       2.925ms           0 b           0 b           0 b           0 b           248            --
+                                    aten::nonzero_numpy         0.01%      37.747ms         0.42%        1.382s     168.702us       0.000us         0.00%     212.821ms      25.979us           0 b           0 b       1.08 Mb           0 b          8192            --
+                                          aten::nonzero         0.11%     371.209ms         0.38%        1.263s     154.235us      92.325ms         4.51%     212.821ms      25.979us           0 b           0 b       1.08 Mb      -4.21 Mb          8192            --
+                                            aten::where         0.01%      39.093ms         0.42%        1.395s     170.308us       0.000us         0.00%     207.608ms      25.343us           0 b           0 b       1.08 Mb      26.00 Kb          8192            --
+                                            aten::copy_         0.10%     337.558ms         0.43%        1.420s      17.903us      97.029ms         4.73%     190.912ms       2.408us           0 b           0 b           0 b           0 b         79297            --
+                                         aten::_to_copy         0.12%     379.628ms         0.59%        1.937s      28.056us       0.000us         0.00%     144.232ms       2.090us      21.17 Mb     566.43 Kb      95.41 Mb           0 b         69024            --
+                                               aten::to         0.06%     206.690ms         0.62%        2.048s      24.871us       0.000us         0.00%     137.721ms       1.673us      21.16 Mb       2.01 Mb      95.41 Mb       6.52 Mb         82341            --
+                                       cudaLaunchKernel         0.34%        1.123s         0.34%        1.123s      10.658us      99.583ms         4.86%      99.583ms       0.945us           0 b           0 b           0 b           0 b        105357            --
+                                              aten::mul         0.11%     355.749ms         0.13%     425.652ms      17.252us      41.612ms         2.03%      58.723ms       2.380us      82.97 Mb      82.97 Mb     110.56 Mb     110.56 Mb         24672        75.025
+                                  cudaStreamSynchronize         0.02%      79.452ms         0.02%      79.452ms       3.432us      58.257ms         2.84%      58.257ms       2.516us           0 b           0 b           0 b           0 b         23151            --
+                                            aten::index         0.12%     385.042ms         0.16%     528.880ms      28.690us      46.784ms         2.28%      53.144ms       2.883us          10 b          10 b      24.27 Mb      24.27 Mb         18434            --
+void at::native::index_elementwise_kernel<128, 4, at...         0.00%       0.000us         0.00%       0.000us       0.000us      46.784ms         2.28%      46.784ms       7.209us           0 b           0 b           0 b           0 b          6490            --
+                                            aten::clone         0.02%      53.813ms         0.10%     340.114ms      33.111us       0.000us         0.00%      44.447ms       4.327us           0 b           0 b     463.25 Mb      -1.71 Mb         10272            --
+                                             aten::topk         0.02%      77.500ms         0.04%     137.122ms     129.850us      34.533ms         1.69%      41.481ms      39.281us         440 b         440 b       1.00 Mb       1.00 Mb          1056            --
+                                    cudaPeekAtLastError         0.00%     235.000us         0.00%     235.000us       0.005us      39.119ms         1.91%      39.119ms       0.796us           0 b           0 b           0 b           0 b         49148            --
+                                       aten::index_add_         0.05%     166.063ms         0.10%     335.127ms      40.909us      27.002ms         1.32%      37.099ms       4.529us           0 b           0 b           0 b           0 b          8192            --
+                                        cudaMemcpyAsync         0.36%        1.194s         0.36%        1.194s      47.743us      33.757ms         1.65%      33.757ms       1.349us           0 b           0 b           0 b           0 b         25015            --
+                                              aten::cat         0.02%      72.968ms         0.03%     114.843ms      28.483us      24.894ms         1.21%      31.705ms       7.863us           0 b           0 b     126.12 Mb     126.12 Mb          4032            --
+                                       aten::contiguous         0.01%      25.991ms         0.08%     273.050ms      33.202us       0.000us         0.00%      29.337ms       3.567us           0 b           0 b       7.25 Mb     378.50 Kb          8224            --
+void at_cuda_detail::cub::DeviceSelectSweepKernel<at...         0.00%       0.000us         0.00%       0.000us       0.000us      27.602ms         1.35%      27.602ms       3.369us           0 b           0 b           0 b           0 b          8192            --
+void at::native::indexFuncSmallIndex<c10::BFloat16, ...         0.00%       0.000us         0.00%       0.000us       0.000us      27.002ms         1.32%      27.002ms       3.296us           0 b           0 b           0 b           0 b          8192            --
+void at::native::elementwise_kernel<128, 4, at::nati...         0.00%       0.000us         0.00%       0.000us       0.000us      26.529ms         1.29%      26.529ms       5.871us           0 b           0 b           0 b           0 b          4519            --
+void at::native::unrolled_elementwise_kernel<at::nat...         0.00%       0.000us         0.00%       0.000us       0.000us      24.982ms         1.22%      24.982ms       8.048us           0 b           0 b           0 b           0 b          3104            --
+void at_cuda_detail::cub::DeviceReduceSingleTileKern...         0.00%       0.000us         0.00%       0.000us       0.000us      24.577ms         1.20%      24.577ms       3.000us           0 b           0 b           0 b           0 b          8192            --
+void at::native::elementwise_kernel<128, 2, at::nati...         0.00%       0.000us         0.00%       0.000us       0.000us      24.576ms         1.20%      24.576ms       3.000us           0 b           0 b           0 b           0 b          8192            --
+-------------------------------------------------------  ------------  ------------  ------------  ------------  ------------  ------------  ------------  ------------  ------------  ------------  ------------  ------------  ------------  ------------  ------------
+Self CPU time total: 328.995s
+Self CUDA time total: 2.049s
+
+Chrome trace 已保存到 /home/yyj/fiddler/asset/fiddler_profiler_trace.json，可用 chrome://tracing 打开查看。
+
+
+
+内存时间线 HTML 已保存到 /home/yyj/fiddler/asset/fiddler_memory_timeline.html，用浏览器打开可查看内存变化。
+prefill_time: 95.4245092868805, decode_time: 233.52979183197021, hit_rate: 0.16193181818181818
+Fatal Python error: none_dealloc: deallocating None
+Python runtime state: finalizing (tstate=0x00005621a7b04660)
+
+Current thread 0x00007f0f56873280 (most recent call first):
+  Garbage-collecting
+  <no Python frame>
+./test-fiddler.sh: line 9: 10068 Aborted                 python src/fiddler/infer.py --input "${PROMPT:-写一首关于春天的诗}" --n-token 32 --profile
+(base) yyj@instance-20260227-080205:~/fiddler$
