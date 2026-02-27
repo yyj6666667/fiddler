@@ -203,9 +203,8 @@ def build_model(
     quant_config: QuantConfig | None,
     offload_config: OffloadConfig,
     state_path: str,
+    model_name: str,
 ):
-    model_name = "mistralai/Mixtral-8x7B-Instruct-v0.1"
-
     state_dict_00 = load_00_expert_state_dict(state_path, device, quant_config)
 
     def _make_module():

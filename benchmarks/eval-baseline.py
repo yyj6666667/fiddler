@@ -64,14 +64,20 @@ def init_mixtral_offload():
     from hqq.core.quantize import BaseQuantizeConfig
     from mixtral_offloading.src.build_model import OffloadConfig, QuantConfig, build_model
 
-    quantized = False
+    quantized = args.quantized
 
-    if not quantized:
-        state_path = "Mixtral-8x7B-Instruct-v0.1"
-        model_name = "mistralai/Mixtral-8x7B-Instruct-v0.1"
+    # Use the same model identifier/path as fiddler if provided.
+    # If args.model points to a local directory, we also use it as state_path
+    # (where safetensors weights are stored). Otherwise, fall back to the
+    # original Mixtral-8x7B-Instruct-v0.1 directory created by download.sh.
+    model_name = args.model
+    if os.path.isdir(model_name):
+        state_path = model_name
     else:
-        state_path = "Mixtral-8x7B-Instruct-v0.1-offloading-demo"
-        model_name = "lavawolfiee/Mixtral-8x7B-Instruct-v0.1-offloading-demo"
+        if not quantized:
+            state_path = "Mixtral-8x7B-Instruct-v0.1"
+        else:
+            state_path = "Mixtral-8x7B-Instruct-v0.1-offloading-demo"
 
     config = AutoConfig.from_pretrained(model_name)
 
@@ -118,6 +124,7 @@ def init_mixtral_offload():
         quant_config=quant_config,
         offload_config=offload_config,
         state_path=state_path,
+        model_name=model_name,
     )
     return model
 
@@ -129,7 +136,12 @@ def eval(model):
 
     device = torch.device("cuda:0")
 
-    path_json = 'Mixtral-8x7B-Instruct-v0.1/ShareGPT_V3_unfiltered_cleaned_split.json'
+    # Use dataset colocated with state_path if args.model is a local directory,
+    # otherwise fall back to the original baseline path.
+    if os.path.isdir(args.model):
+        path_json = os.path.join(args.model, 'ShareGPT_V3_unfiltered_cleaned_split.json')
+    else:
+        path_json = 'Mixtral-8x7B-Instruct-v0.1/ShareGPT_V3_unfiltered_cleaned_split.json'
     with open(path_json, 'r') as f:
         data = json.load(f)
     texts = []
@@ -145,8 +157,7 @@ def eval(model):
 
     n_sample = 3
 
-    model_name = "mistralai/Mixtral-8x7B-Instruct-v0.1"
-    tokenizer = AutoTokenizer.from_pretrained(model_name)
+    tokenizer = AutoTokenizer.from_pretrained(args.model)
 
     for input_token in [16, 32, 64, 128]:
         for output_token in [16, 32, 64, 128, 256, 512]:
@@ -195,6 +206,12 @@ if __name__ == "__main__":
     parser.add_argument(
         '--quantized', type=bool, default=False,
         help='Whether to use quantized model in mixtral-offloading.'
+    )
+    parser.add_argument(
+        '--model',
+        type=str,
+        default='mistralai/Mixtral-8x7B-Instruct-v0.1',
+        help='Model path or HF repo id to use for both fiddler and mixtral-offloading baselines.',
     )
     parser.add_argument(
         '--framework',
