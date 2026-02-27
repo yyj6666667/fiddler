@@ -190,6 +190,7 @@ def eval(model):
                         record_shapes=True,
                         profile_memory=True,
                         with_stack=True,
+                        with_flops=True,
                     ) as prof:
                         with record_function("model_generate"):
                             result = model.generate(
