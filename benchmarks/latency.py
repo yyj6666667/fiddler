@@ -63,8 +63,8 @@ if __name__ == "__main__":
 
     did_profile = False
 
-    for input_token in [16, 32, 64, 128]:
-        for output_token in [16, 32, 64, 128, 256, 512]:
+    for input_token in [16]:
+        for output_token in [16]:
             idx_text = 0
             prefill_time_sum, decode_time_sum, hit_rate_sum = 0, 0, 0
             for _ in range(n_sample):

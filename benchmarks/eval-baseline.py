@@ -181,8 +181,8 @@ def eval(model):
 
     did_profile = False
 
-    for input_token in [16, 32, 64, 128]:
-        for output_token in [16, 32, 64, 128, 256, 512]:
+    for input_token in [16]:
+        for output_token in [16]:
             idx_text = 0
             time_sum = 0
             num_tokens = 0
