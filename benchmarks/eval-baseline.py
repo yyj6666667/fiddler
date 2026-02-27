@@ -14,6 +14,14 @@ BENCHMARKS_DIR = os.path.dirname(os.path.abspath(__file__))
 sys.path.insert(0, BENCHMARKS_DIR)
 
 
+def _resolve_state_path(model_id_or_path: str) -> str:
+    """HF model id 解析为本地路径：已是目录则直接返回，否则用 Hugging Face 默认缓存路径。"""
+    if os.path.isdir(model_id_or_path):
+        return model_id_or_path
+    from huggingface_hub import snapshot_download
+    return snapshot_download(repo_id=model_id_or_path)
+
+
 def main():
     os.chdir(os.path.join(BENCHMARKS_DIR, "mixtral_offloading"))
 
@@ -70,22 +78,23 @@ def init_mixtral_offload():
     quantized = args.quantized
 
     # Use the same model identifier/path as fiddler if provided.
-    # If args.model points to a local directory, we also use it as state_path
-    # (where safetensors weights are stored). Otherwise, fall back to the
-    # Mixtral-8x7B-v0.1 directory (same as Fiddler).
+    # If args.model is a local directory, use it as state_path; otherwise resolve
+    # to Hugging Face default cache (snapshot_download).
     model_name = args.model
     if os.path.isdir(model_name):
         state_path = model_name
     else:
         if not quantized:
-            state_path = "Mixtral-8x7B-v0.1"
+            state_path = _resolve_state_path(model_name)
         else:
-            # 量化模式优先用预量化 demo 目录；若不存在则与 Fiddler 共用同一权重目录
+            # 量化模式优先用预量化 demo 目录；若不存在则用 HF 缓存中的模型目录（与 Fiddler 共用）
             demo_dir = "Mixtral-8x7B-v0.1-offloading-demo"
-            state_path = demo_dir if os.path.isdir(demo_dir) else "Mixtral-8x7B-v0.1"
-            if state_path != demo_dir:
+            if os.path.isdir(demo_dir):
+                state_path = demo_dir
+            else:
+                state_path = _resolve_state_path(model_name)
                 logging.warning(
-                    f"未找到 {demo_dir}，量化模式使用 Mixtral-8x7B-v0.1 权重目录（与 Fiddler 共用）。"
+                    f"未找到 {demo_dir}，量化模式使用 HF 缓存目录（与 Fiddler 共用）: {state_path}"
                 )
 
     config = AutoConfig.from_pretrained(model_name)
@@ -257,11 +266,21 @@ def eval(model):
                 f'*******************\n')
 
 
+def _parse_bool(s: str) -> bool:
+    if s.lower() in ("true", "1", "yes"):
+        return True
+    if s.lower() in ("false", "0", "no"):
+        return False
+    raise ValueError(f"Expected true/false, got {s!r}")
+
+
 if __name__ == "__main__":
     parser = argparse.ArgumentParser()
     parser.add_argument(
-        '--quantized', type=bool, default=False,
-        help='Whether to use quantized model in mixtral-offloading.'
+        '--quantized',
+        type=_parse_bool,
+        default=False,
+        help='Whether to use quantized model in mixtral-offloading (true/false).',
     )
     parser.add_argument(
         '--model',
