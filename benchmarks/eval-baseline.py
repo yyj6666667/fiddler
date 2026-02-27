@@ -14,14 +14,6 @@ BENCHMARKS_DIR = os.path.dirname(os.path.abspath(__file__))
 sys.path.insert(0, BENCHMARKS_DIR)
 
 
-def _resolve_state_path(model_id_or_path: str) -> str:
-    """HF model id 解析为本地路径：已是目录则直接返回，否则用 Hugging Face 默认缓存路径。"""
-    if os.path.isdir(model_id_or_path):
-        return model_id_or_path
-    from huggingface_hub import snapshot_download
-    return snapshot_download(repo_id=model_id_or_path)
-
-
 def main():
     os.chdir(os.path.join(BENCHMARKS_DIR, "mixtral_offloading"))
 
@@ -78,24 +70,28 @@ def init_mixtral_offload():
     quantized = args.quantized
 
     # Use the same model identifier/path as fiddler if provided.
-    # If args.model is a local directory, use it as state_path; otherwise resolve
-    # to Hugging Face default cache (snapshot_download).
+    # If args.model is a local directory, use it as state_path; otherwise use ~/.cache/huggingface/hub/
     model_name = args.model
     if os.path.isdir(model_name):
         state_path = model_name
     else:
-        if not quantized:
-            state_path = _resolve_state_path(model_name)
+        demo_dir = "Mixtral-8x7B-v0.1-offloading-demo"
+        if quantized and os.path.isdir(demo_dir):
+            state_path = demo_dir
         else:
-            # 量化模式优先用预量化 demo 目录；若不存在则用 HF 缓存中的模型目录（与 Fiddler 共用）
-            demo_dir = "Mixtral-8x7B-v0.1-offloading-demo"
-            if os.path.isdir(demo_dir):
-                state_path = demo_dir
-            else:
-                state_path = _resolve_state_path(model_name)
-                logging.warning(
-                    f"未找到 {demo_dir}，量化模式使用 HF 缓存目录（与 Fiddler 共用）: {state_path}"
+            cache_root = os.path.expanduser("~/.cache/huggingface/hub")
+            blob_dir = "models--" + "--".join(model_name.split("/"))
+            snapshots_dir = os.path.join(cache_root, blob_dir, "snapshots")
+            if not os.path.isdir(snapshots_dir):
+                raise FileNotFoundError(
+                    f"未找到 HF 缓存目录 {snapshots_dir}，请先下载模型或指定本地 --model 路径。"
                 )
+            revisions = os.listdir(snapshots_dir)
+            if not revisions:
+                raise FileNotFoundError(f"HF 缓存目录为空: {snapshots_dir}")
+            state_path = os.path.join(snapshots_dir, revisions[0])
+            if quantized:
+                logging.warning(f"未找到 {demo_dir}，量化模式使用 HF 缓存: {state_path}")
 
     config = AutoConfig.from_pretrained(model_name)
 
