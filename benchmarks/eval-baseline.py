@@ -9,11 +9,13 @@ import sys
 import argparse
 import logging
 
-sys.path.append("mixtral-offloading")
+# 所有路径基于本文件所在目录，与当前工作目录无关，避免与 Vs.sh 等调用方 cwd 冲突
+BENCHMARKS_DIR = os.path.dirname(os.path.abspath(__file__))
+sys.path.insert(0, BENCHMARKS_DIR)
 
 
 def main():
-    os.chdir("mixtral_offloading")
+    os.chdir(os.path.join(BENCHMARKS_DIR, "mixtral_offloading"))
 
     if args.framework == 'mixtral-offloading':
         logging.info('Using mixtral-offloading')
@@ -142,7 +144,7 @@ def eval(model):
     if os.path.isdir(args.model):
         path_json = os.path.join(args.model, 'ShareGPT_V3_unfiltered_cleaned_split.json')
     else:
-        path_json = os.path.join(os.path.dirname(__file__), 'ShareGPT_V3_unfiltered_cleaned_split.json')
+        path_json = os.path.join(BENCHMARKS_DIR, 'ShareGPT_V3_unfiltered_cleaned_split.json')
     with open(path_json, 'r') as f:
         data = json.load(f)
     texts = []
