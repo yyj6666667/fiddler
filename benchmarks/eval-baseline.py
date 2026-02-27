@@ -216,7 +216,8 @@ def eval(model):
                         )
                     )
 
-                    trace_path = "mixtral_profiler_trace.json"
+                    # 根据 framework 命名 trace 文件，方便区分不同 inference engine
+                    trace_path = f"{args.framework}_profiler_trace.json"
                     prof.export_chrome_trace(trace_path)
                     logging.info(
                         f"Chrome trace 已保存到 {trace_path}，可用 chrome://tracing 打开查看。"
