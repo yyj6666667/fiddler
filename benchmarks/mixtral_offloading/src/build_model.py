@@ -172,7 +172,8 @@ def make_and_load_expert_wrapper(
             expert.load_state_dict(state_dict, strict=True)
         else:
             module_idx = f"model.layers.{layer_idx}.block_sparse_moe.experts.{expert_idx}"
-            state_fpath = json.load(f)["weight_map"][f"{module_idx}.w1.W_q"]
+            # Reuse the already-parsed index; the file handle is at EOF after json.load above.
+            state_fpath = json_config["weight_map"][f"{module_idx}.w1.W_q"]
             state_dict = load_file(os.path.join(states_dir, state_fpath), device=str(device))
             expert = make_empty_expert(config, quant_config)
             expert.load_state_dict(state_dict, strict=True)
