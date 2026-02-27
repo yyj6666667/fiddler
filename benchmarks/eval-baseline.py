@@ -70,14 +70,17 @@ def init_mixtral_offload():
     quantized = args.quantized
 
     # Use the same model identifier/path as fiddler if provided.
-    # If args.model is a local directory, use it as state_path; otherwise use ~/.cache/huggingface/hub/
+    # If args.model is a local directory, use it as state_path.
+    # If args.model is a HF repo id:
+    #   - quantized=True: allow downloading missing quantized files (W_q, etc.)
+    #   - quantized=False: use local HF cache path only (no download)
     model_name = args.model
     if os.path.isdir(model_name):
         state_path = model_name
     else:
-        demo_dir = "Mixtral-8x7B-v0.1-offloading-demo"
-        if quantized and os.path.isdir(demo_dir):
-            state_path = demo_dir
+        if quantized:
+            from huggingface_hub import snapshot_download
+            state_path = snapshot_download(repo_id=model_name)
         else:
             cache_root = os.path.expanduser("~/.cache/huggingface/hub")
             blob_dir = "models--" + "--".join(model_name.split("/"))
@@ -89,9 +92,13 @@ def init_mixtral_offload():
             revisions = os.listdir(snapshots_dir)
             if not revisions:
                 raise FileNotFoundError(f"HF 缓存目录为空: {snapshots_dir}")
+            # 选择最近写入的 snapshot 目录（不触发下载/解析）
+            revisions = sorted(
+                revisions,
+                key=lambda r: os.path.getmtime(os.path.join(snapshots_dir, r)),
+                reverse=True,
+            )
             state_path = os.path.join(snapshots_dir, revisions[0])
-            if quantized:
-                logging.warning(f"未找到 {demo_dir}，量化模式使用 HF 缓存: {state_path}")
 
     config = AutoConfig.from_pretrained(model_name)
 
