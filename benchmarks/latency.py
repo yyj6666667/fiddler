@@ -66,7 +66,7 @@ if __name__ == "__main__":
     random.seed(0)
     random.shuffle(texts)
     model = FiddlerMixtral(args)
-    n_sample = 10
+    n_sample = 3
 
     did_profile = False
 
