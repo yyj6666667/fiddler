@@ -402,7 +402,7 @@ class FiddlerMixtral:
 
             logits = self.mixtral_forward(input_ids, position_ids, is_decode)
 
-            with record_function("offload_to_cpu"):
+            with record_function("yyj:offload_to_cpu"):
                 logits = logits.to("cpu")
             # logits.shape: (batch_size, seq_len, vocab_size)
 
@@ -485,174 +485,182 @@ class FiddlerMixtral:
             original_inps_shape = inps.shape
 
             inps_residual = inps
-            inps = layer.input_layernorm(inps)
-            inps, self_attn_weights, present_key_value = layer.self_attn(
-                inps,
-                position_ids=position_ids,
-                past_key_value=self.past_key_value,
-                use_cache=True,
-            )
+            with record_function(f"yyj:layer_{i_layer}_attn_input_layernorm"):
+                inps = layer.input_layernorm(inps)
+            with record_function(f"yyj:layer_{i_layer}_attn_self_attn"):
+                inps, self_attn_weights, present_key_value = layer.self_attn(
+                    inps,
+                    position_ids=position_ids,
+                    past_key_value=self.past_key_value,
+                    use_cache=True,
+                )
             # inps.shape: (batch_size, seq_len/token_num, embed_dim)
-            inps = inps_residual + inps
+            with record_function(f"yyj:layer_{i_layer}_attn_residual"):
+                inps = inps_residual + inps
             inps_residual = inps
-            inps = layer.post_attention_layernorm(inps)
+            with record_function(f"yyj:layer_{i_layer}_ffn_post_attention_layernorm"):
+                inps = layer.post_attention_layernorm(inps)
             inps = inps.view(-1, hidden_dim)
             # inps.shape: (batch_size*seq_len*embed_dim/hidden_dim, hidden_dim)
-            router_logits = layer.block_sparse_moe.gate(inps)
-            routing_weights = F.softmax(router_logits, dim=1)
-            # routing_weights.shape: (batch_size*seq_len, num_experts)
-            routing_weights, selected_experts = torch.topk(routing_weights, 2, dim=-1)
-            # routing_weights.shape: (batch_size*seq_len, 2)
-            # selected_experts.shape: (batch_size*seq_len, 2)
-            routing_weights /= routing_weights.sum(dim=-1, keepdim=True)
+            with record_function(f"yyj:layer_{i_layer}_ffn_gate"):
+                router_logits = layer.block_sparse_moe.gate(inps)
+            with record_function(f"yyj:layer_{i_layer}_ffn_routing"):
+                routing_weights = F.softmax(router_logits, dim=1)
+                # routing_weights.shape: (batch_size*seq_len, num_experts)
+                routing_weights, selected_experts = torch.topk(routing_weights, 2, dim=-1)
+                # routing_weights.shape: (batch_size*seq_len, 2)
+                # selected_experts.shape: (batch_size*seq_len, 2)
+                routing_weights /= routing_weights.sum(dim=-1, keepdim=True)
 
             # intermediate variable to store the output of experts
             inps_after_experts = torch.zeros_like(inps, device=self.dev)
             experts = layer.block_sparse_moe.experts
 
-            if self.cpu_offload == 0:
-                # baseline: do everything at GPU
-                expert_mask = torch.nn.functional.one_hot(
-                    selected_experts, num_classes=8
-                ).permute(2, 1, 0)
+            with record_function(f"yyj:layer_{i_layer}_ffn_experts"):
+                if self.cpu_offload == 0:
+                    # baseline: do everything at GPU
+                    expert_mask = torch.nn.functional.one_hot(
+                        selected_experts, num_classes=8
+                    ).permute(2, 1, 0)
 
-                for i_expert in range(len(experts)):
-                    is_cuda = self.is_expert_in_gpu(i_layer, i_expert)
-                    idx, top_2 = torch.where(expert_mask[i_expert])
-
-                    if top_2.shape[0] == 0:
-                        # print(f"Expert {i_expert}: has no tokens")
-                        continue
-
-                    # torch.cuda.synchronize()
-                    top_2_list = top_2.tolist()
-                    idx_list = idx.tolist()
-
-                    current_state = inps[None, top_2_list].reshape(-1, hidden_dim)
-                    if not is_cuda:
-                        with record_function("offload_to_gpu"):
-                            self.expert_placeholder.load_state_dict(
-                                experts[i_expert].state_dict()
-                            )
-                        with record_function("gpu_forward"):
-                            current_state = self.expert_placeholder(
-                                current_state, routing_weights[top_2_list, idx_list, None]
-                            )
-                    else:
-                        with record_function("gpu_forward"):
-                            current_state = experts[i_expert](
-                                current_state, routing_weights[top_2_list, idx_list, None]
-                            )
-                    inps_after_experts.index_add_(
-                        0, top_2, current_state.to(inps.dtype)
-                    )
-
-                    if not is_cuda:
-                        with record_function("offload_to_cpu"):
-                            experts[i_expert] = experts[i_expert].to("cpu")
-
-                    # end of one expert
-
-            else:
-                # prefill stage with offloading
-                expert_mask = torch.nn.functional.one_hot(
-                    selected_experts, num_classes=8
-                ).permute(2, 1, 0)
-
-                # first, calculate the number of tokens for each expert
-                idxs, top_2s = [], []
-                cost_per_expert = np.zeros(
-                    (len(experts), 2), dtype=float
-                )  # 0: CPU, 1: GPU
-                for i_expert in range(len(experts)):
-                    idx, top_2 = torch.where(expert_mask[i_expert])
-                    idxs.append(idx)
-                    top_2s.append(top_2)
-                    # expected latency at CPU: number of token * cost_at_cpu
-                    # expected latency at GPU: cost_at_gpu (constant)
-                    cost_per_expert[i_expert, 0] = top_2.shape[0] * self.latency_cpu
-                    cost_per_expert[i_expert, 1] = self.latency_gpu
-                    if self.is_expert_in_gpu(i_layer, i_expert):
-                        # if the expert is in GPU, the latency at GPU is
-                        # approximately 0
-                        cost_per_expert[i_expert, 1] = 0
-                        self.cnt_expert_hit += top_2.shape[0]
-                    self.cnt_expert_all += top_2.shape[0]
-
-                # second, partition experts processing between CPU and GPU so that we can minimize:
-                # max(sum of cost at CPU, sum of cost at GPU)
-                # greedy algorithm is just as there are only 8 experts for Mixtral
-                best_config = -1
-                best_cost = float("inf")
-                for config in range(1 << len(experts)):
-                    sum_cost = 0
                     for i_expert in range(len(experts)):
-                        if (config >> i_expert) & 1:
-                            sum_cost += cost_per_expert[i_expert, 0]
+                        is_cuda = self.is_expert_in_gpu(i_layer, i_expert)
+                        idx, top_2 = torch.where(expert_mask[i_expert])
+
+                        if top_2.shape[0] == 0:
+                            # print(f"Expert {i_expert}: has no tokens")
+                            continue
+
+                        # torch.cuda.synchronize()
+                        top_2_list = top_2.tolist()
+                        idx_list = idx.tolist()
+
+                        current_state = inps[None, top_2_list].reshape(-1, hidden_dim)
+                        if not is_cuda:
+                            with record_function("yyj:offload_to_gpu"):
+                                self.expert_placeholder.load_state_dict(
+                                    experts[i_expert].state_dict()
+                                )
+                            with record_function("yyj:gpu_forward"):
+                                current_state = self.expert_placeholder(
+                                    current_state, routing_weights[top_2_list, idx_list, None]
+                                )
                         else:
-                            sum_cost += cost_per_expert[i_expert, 1]
-                    if sum_cost < best_cost:
-                        best_cost = sum_cost
-                        best_config = config
-
-                # then, we can offload the experts according to the best
-                # configuration
-                cpu_experts = []
-                gpu_experts = []
-                for i_expert in range(8):
-                    if (best_config >> i_expert) & 1:
-                        cpu_experts.append(i_expert)
-                    else:
-                        gpu_experts.append(i_expert)
-
-                for i_expert in gpu_experts:
-                    top_2_list = top_2s[i_expert].tolist()
-                    idx_list = idxs[i_expert].tolist()
-                    current_state = inps[None, top_2_list].reshape(-1, hidden_dim)
-                    if self.is_expert_in_gpu(i_layer, i_expert):
-                        with record_function("gpu_forward"):
-                            current_state = experts[i_expert](
-                                current_state, routing_weights[top_2_list, idx_list, None]
-                            )
-                    else:
-                        with record_function("offload_to_gpu"):
-                            self.expert_placeholder.load_state_dict(
-                                experts[i_expert].state_dict()
-                            )
-                        with record_function("gpu_forward"):
-                            current_state = self.expert_placeholder(
-                                current_state, routing_weights[top_2_list, idx_list, None]
-                            )
-                    inps_after_experts.index_add_(
-                        0,
-                        top_2s[i_expert].to(self.dev, non_blocking=True),
-                        current_state.to(self.dev, non_blocking=True),
-                    )
-
-                for i_expert in cpu_experts:
-                    top_2_list = top_2s[i_expert].tolist()
-                    idx_list = idxs[i_expert].tolist()
-                    current_state = inps[None, top_2_list].reshape(-1, hidden_dim)
-                    with record_function("offload_to_cpu"):
-                        current_state_cpu = current_state.to("cpu")
-                        routing_weights_cpu = routing_weights[top_2_list, idx_list, None].to("cpu")
-                    with record_function("cpu_forward"):
-                        current_state = self.run_expert_at_cpu(
-                            i_layer,
-                            i_expert,
-                            current_state_cpu,
-                            routing_weights_cpu,
+                            with record_function("yyj:gpu_forward"):
+                                current_state = experts[i_expert](
+                                    current_state, routing_weights[top_2_list, idx_list, None]
+                                )
+                        inps_after_experts.index_add_(
+                            0, top_2, current_state.to(inps.dtype)
                         )
-                    with record_function("offload_to_gpu"):
-                        current_state = current_state.to(self.dev, non_blocking=True)
-                    inps_after_experts.index_add_(
-                        0,
-                        top_2s[i_expert].to(self.dev, non_blocking=True),
-                        current_state,
-                    )
+
+                        if not is_cuda:
+                            with record_function("yyj:offload_to_cpu"):
+                                experts[i_expert] = experts[i_expert].to("cpu")
+
+                        # end of one expert
+
+                else:
+                    # prefill stage with offloading
+                    expert_mask = torch.nn.functional.one_hot(
+                        selected_experts, num_classes=8
+                    ).permute(2, 1, 0)
+
+                    # first, calculate the number of tokens for each expert
+                    idxs, top_2s = [], []
+                    cost_per_expert = np.zeros(
+                        (len(experts), 2), dtype=float
+                    )  # 0: CPU, 1: GPU
+                    for i_expert in range(len(experts)):
+                        idx, top_2 = torch.where(expert_mask[i_expert])
+                        idxs.append(idx)
+                        top_2s.append(top_2)
+                        # expected latency at CPU: number of token * cost_at_cpu
+                        # expected latency at GPU: cost_at_gpu (constant)
+                        cost_per_expert[i_expert, 0] = top_2.shape[0] * self.latency_cpu
+                        cost_per_expert[i_expert, 1] = self.latency_gpu
+                        if self.is_expert_in_gpu(i_layer, i_expert):
+                            # if the expert is in GPU, the latency at GPU is
+                            # approximately 0
+                            cost_per_expert[i_expert, 1] = 0
+                            self.cnt_expert_hit += top_2.shape[0]
+                        self.cnt_expert_all += top_2.shape[0]
+
+                    # second, partition experts processing between CPU and GPU so that we can minimize:
+                    # max(sum of cost at CPU, sum of cost at GPU)
+                    # greedy algorithm is just as there are only 8 experts for Mixtral
+                    best_config = -1
+                    best_cost = float("inf")
+                    for config in range(1 << len(experts)):
+                        sum_cost = 0
+                        for i_expert in range(len(experts)):
+                            if (config >> i_expert) & 1:
+                                sum_cost += cost_per_expert[i_expert, 0]
+                            else:
+                                sum_cost += cost_per_expert[i_expert, 1]
+                        if sum_cost < best_cost:
+                            best_cost = sum_cost
+                            best_config = config
+
+                    # then, we can offload the experts according to the best
+                    # configuration
+                    cpu_experts = []
+                    gpu_experts = []
+                    for i_expert in range(8):
+                        if (best_config >> i_expert) & 1:
+                            cpu_experts.append(i_expert)
+                        else:
+                            gpu_experts.append(i_expert)
+
+                    for i_expert in gpu_experts:
+                        top_2_list = top_2s[i_expert].tolist()
+                        idx_list = idxs[i_expert].tolist()
+                        current_state = inps[None, top_2_list].reshape(-1, hidden_dim)
+                        if self.is_expert_in_gpu(i_layer, i_expert):
+                            with record_function("yyj:gpu_forward"):
+                                current_state = experts[i_expert](
+                                    current_state, routing_weights[top_2_list, idx_list, None]
+                                )
+                        else:
+                            with record_function("yyj:offload_to_gpu"):
+                                self.expert_placeholder.load_state_dict(
+                                    experts[i_expert].state_dict()
+                                )
+                            with record_function("yyj:gpu_forward"):
+                                current_state = self.expert_placeholder(
+                                    current_state, routing_weights[top_2_list, idx_list, None]
+                                )
+                        inps_after_experts.index_add_(
+                            0,
+                            top_2s[i_expert].to(self.dev, non_blocking=True),
+                            current_state.to(self.dev, non_blocking=True),
+                        )
+
+                    for i_expert in cpu_experts:
+                        top_2_list = top_2s[i_expert].tolist()
+                        idx_list = idxs[i_expert].tolist()
+                        current_state = inps[None, top_2_list].reshape(-1, hidden_dim)
+                        with record_function("yyj:offload_to_cpu"):
+                            current_state_cpu = current_state.to("cpu")
+                            routing_weights_cpu = routing_weights[top_2_list, idx_list, None].to("cpu")
+                        with record_function("yyj:cpu_forward"):
+                            current_state = self.run_expert_at_cpu(
+                                i_layer,
+                                i_expert,
+                                current_state_cpu,
+                                routing_weights_cpu,
+                            )
+                        with record_function("yyj:offload_to_gpu"):
+                            current_state = current_state.to(self.dev, non_blocking=True)
+                        inps_after_experts.index_add_(
+                            0,
+                            top_2s[i_expert].to(self.dev, non_blocking=True),
+                            current_state,
+                        )
 
             # addition because there's residual connection over moe layer
-            inps = inps_residual + inps_after_experts.reshape(original_inps_shape)
+            with record_function(f"yyj:layer_{i_layer}_ffn_residual"):
+                inps = inps_residual + inps_after_experts.reshape(original_inps_shape)
 
             # end of one layer
 
