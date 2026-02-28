@@ -36,7 +36,7 @@ if __name__ == "__main__":
         default=1,
         help="batch size for inference.",
     )
-    parser.add_argument("--beam_num", type=int, default=1, help="Beam search number.")
+    parser.add_argument("--beam_width", type=int, default=1, help="Beam search width.")
     parser.add_argument(
         "--profile",
         action="store_true",

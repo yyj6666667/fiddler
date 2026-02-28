@@ -42,7 +42,7 @@ echo "=== Fiddler baseline (latency benchmark，带 PyTorch Profiler) ==="
     --model "${FIDDLER_MODEL}" \
     --cpu-offload 1 \
     --batch_size 1 \
-    --beam_num 1 \
+    --beam_width 1 \
     --profile
 )
 
