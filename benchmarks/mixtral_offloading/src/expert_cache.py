@@ -5,6 +5,7 @@ from .expert_wrapper import MixtralExpertWrapper
 
 import torch
 from torch import nn
+from torch.profiler import record_function
 
 ExpertUID = Any
 
@@ -199,8 +200,10 @@ class ExpertCache:
         # swap a single on-device expert with a single offloaded expert using buffers for parallelism
         offloaded_storage_buffer = self.offloaded_storage_buffers.popleft()
         device_expert_buffer = self.device_expert_buffers.popleft()
-        device_expert_buffer.storage.copy_(self.offloaded_storages[info_to_load.index], non_blocking=True)
-        offloaded_storage_buffer.copy_(self.main_modules[info_to_evict.index].storage, non_blocking=True)
+        with record_function("offload_to_gpu"):
+            device_expert_buffer.storage.copy_(self.offloaded_storages[info_to_load.index], non_blocking=True)
+        with record_function("offload_to_cpu"):
+            offloaded_storage_buffer.copy_(self.main_modules[info_to_evict.index].storage, non_blocking=True)
 
         self.device_expert_buffers.append(self.main_modules[info_to_evict.index])
         self.main_modules[info_to_evict.index] = device_expert_buffer

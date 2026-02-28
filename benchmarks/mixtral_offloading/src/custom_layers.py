@@ -8,6 +8,7 @@ from hqq.core.quantize import HQQLinear, Quantizer
 import torch
 from torch import nn
 from torch.nn import functional as F
+from torch.profiler import record_function
 
 from .packing import pack_4bit_u8_common, pack_2bit_u8_common, unpack_4bit_u8_common, unpack_2bit_u8_common
 from .triton_kernels import triton_matmul4_transpose, triton_matmul3_transpose, triton_matmul2_transpose
@@ -321,7 +322,8 @@ class SparseMoEWrapper(nn.Module):
             # the current expert. We need to make sure to multiply the output hidden
             # states by `routing_weights` on the corresponding tokens (top-1 and top-2)
             current_state = hidden_states[None, top_x_list].reshape(-1, hidden_dim)
-            current_hidden_states = expert_layer(current_state) * routing_weights[top_x_list, idx_list, None]
+            with record_function("gpu_forward"):
+                current_hidden_states = expert_layer(current_state) * routing_weights[top_x_list, idx_list, None]
 
             # However `index_add_` only support torch tensors for indexing so we'll use
             # the `top_x` tensor here.
