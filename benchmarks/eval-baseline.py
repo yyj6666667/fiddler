@@ -237,7 +237,10 @@ def eval(model):
                     )
 
                     # 根据 framework 命名 trace 文件，方便区分不同 inference engine
-                    trace_path = f"{args.framework}_profiler_trace.json"
+                    trace_path = os.path.join(
+                        BENCHMARKS_DIR, args.output_dir,
+                        f"{args.framework}_profiler_trace.json",
+                    )
                     prof.export_chrome_trace(trace_path)
                     logging.info(
                         f"Chrome trace 已保存到 {trace_path}，可用 chrome://tracing 打开查看。"
@@ -303,8 +306,15 @@ if __name__ == "__main__":
         action='store_true',
         help='启用 PyTorch Profiler 对第一次推理进行性能分析（同时导出 Chrome trace）。',
     )
+    parser.add_argument(
+        '--output-dir',
+        type=str,
+        default='.',
+        help='目录：profiler trace 等结果的写入路径（相对 benchmarks/），默认当前目录。',
+    )
 
     args = parser.parse_args()
+    os.makedirs(os.path.join(BENCHMARKS_DIR, args.output_dir), exist_ok=True)
 
     # save log to file
     logging.basicConfig(filename='eval.log', level=logging.INFO)

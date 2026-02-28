@@ -14,6 +14,10 @@ set -euo pipefail
 REPO_ROOT="$(cd "$(dirname "$0")/.." && pwd)"
 cd "$REPO_ROOT"
 
+# Vs.sh 生成的所有结果（profiler trace、latency.txt 等）统一放到此目录
+VS_OUTPUT_DIR="benchmarks/vs_output"
+mkdir -p "$VS_OUTPUT_DIR"
+
 FIDDLER_MODEL="${1:-mistralai/Mixtral-8x7B-v0.1}"
 OFFLOADING_MODEL="${2:-lavawolfiee/Mixtral-8x7B-Instruct-v0.1-offloading-demo}"
 
@@ -31,7 +35,8 @@ echo "=== Mixtral-offloading baseline (带 PyTorch Profiler) ==="
     --framework mixtral-offloading \
     --model "${OFFLOADING_MODEL}" \
     --quantized true \
-    --profile
+    --profile \
+    --output-dir vs_output
 )
 
 echo
@@ -43,11 +48,13 @@ echo "=== Fiddler baseline (latency benchmark，带 PyTorch Profiler) ==="
     --cpu-offload 1 \
     --batch_size 1 \
     --beam_width 1 \
-    --profile
+    --profile \
+    --output-dir vs_output
 )
 
 echo
 echo "=== 完成 ==="
-echo "Profiler trace 文件："
+echo "输出目录: ${VS_OUTPUT_DIR}/"
 echo "  - mixtral-offloading_profiler_trace.json"
 echo "  - fiddler_profiler_trace.json"
+echo "  - latency.txt"

@@ -42,8 +42,15 @@ if __name__ == "__main__":
         action="store_true",
         help="启用 PyTorch Profiler 对第一次 Fiddler 推理进行性能分析，并导出 fiddler_profiler_trace.json。",
     )
+    parser.add_argument(
+        "--output-dir",
+        type=str,
+        default=".",
+        help="目录：profiler trace 与 latency.txt 的写入路径，默认当前目录。",
+    )
 
     args = parser.parse_args()
+    os.makedirs(args.output_dir, exist_ok=True)
 
     path_json = "./ShareGPT_V3_unfiltered_cleaned_split.json"
     with open(path_json, "r") as f:
@@ -104,7 +111,7 @@ if __name__ == "__main__":
                     )
                     print(prof.key_averages().table(sort_by=sort_key, row_limit=30))
 
-                    trace_path = "fiddler_profiler_trace.json"
+                    trace_path = os.path.join(args.output_dir, "fiddler_profiler_trace.json")
                     prof.export_chrome_trace(trace_path)
                     print(
                         f"Chrome trace 已保存到 {trace_path}，可用 chrome://tracing 打开查看。"
@@ -119,7 +126,8 @@ if __name__ == "__main__":
                 hit_rate_sum += hit_rate
 
             # write to file
-            with open("latency.txt", "a") as f:
+            latency_path = os.path.join(args.output_dir, "latency.txt")
+            with open(latency_path, "a") as f:
                 f.write(
                     f"input_token: {input_token}, output_token: {output_token}, "
                     f"prefill_time: {prefill_time_sum / n_sample}, "
