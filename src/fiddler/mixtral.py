@@ -6,6 +6,7 @@ import numpy as np
 import torch
 import torch.nn.functional as F
 from torch.nn.utils.rnn import pad_sequence
+from torch.profiler import record_function
 import transformers
 
 
@@ -401,7 +402,8 @@ class FiddlerMixtral:
 
             logits = self.mixtral_forward(input_ids, position_ids, is_decode)
 
-            logits = logits.to("cpu")
+            with record_function("offload_to_cpu"):
+                logits = logits.to("cpu")
             # logits.shape: (batch_size, seq_len, vocab_size)
 
             # normalize logits
@@ -528,22 +530,26 @@ class FiddlerMixtral:
 
                     current_state = inps[None, top_2_list].reshape(-1, hidden_dim)
                     if not is_cuda:
-                        self.expert_placeholder.load_state_dict(
-                            experts[i_expert].state_dict()
-                        )
-                        current_state = self.expert_placeholder(
-                            current_state, routing_weights[top_2_list, idx_list, None]
-                        )
+                        with record_function("offload_to_gpu"):
+                            self.expert_placeholder.load_state_dict(
+                                experts[i_expert].state_dict()
+                            )
+                        with record_function("gpu_forward"):
+                            current_state = self.expert_placeholder(
+                                current_state, routing_weights[top_2_list, idx_list, None]
+                            )
                     else:
-                        current_state = experts[i_expert](
-                            current_state, routing_weights[top_2_list, idx_list, None]
-                        )
+                        with record_function("gpu_forward"):
+                            current_state = experts[i_expert](
+                                current_state, routing_weights[top_2_list, idx_list, None]
+                            )
                     inps_after_experts.index_add_(
                         0, top_2, current_state.to(inps.dtype)
                     )
 
                     if not is_cuda:
-                        experts[i_expert] = experts[i_expert].to("cpu")
+                        with record_function("offload_to_cpu"):
+                            experts[i_expert] = experts[i_expert].to("cpu")
 
                     # end of one expert
 
@@ -604,16 +610,19 @@ class FiddlerMixtral:
                     idx_list = idxs[i_expert].tolist()
                     current_state = inps[None, top_2_list].reshape(-1, hidden_dim)
                     if self.is_expert_in_gpu(i_layer, i_expert):
-                        current_state = experts[i_expert](
-                            current_state, routing_weights[top_2_list, idx_list, None]
-                        )
+                        with record_function("gpu_forward"):
+                            current_state = experts[i_expert](
+                                current_state, routing_weights[top_2_list, idx_list, None]
+                            )
                     else:
-                        self.expert_placeholder.load_state_dict(
-                            experts[i_expert].state_dict()
-                        )
-                        current_state = self.expert_placeholder(
-                            current_state, routing_weights[top_2_list, idx_list, None]
-                        )
+                        with record_function("offload_to_gpu"):
+                            self.expert_placeholder.load_state_dict(
+                                experts[i_expert].state_dict()
+                            )
+                        with record_function("gpu_forward"):
+                            current_state = self.expert_placeholder(
+                                current_state, routing_weights[top_2_list, idx_list, None]
+                            )
                     inps_after_experts.index_add_(
                         0,
                         top_2s[i_expert].to(self.dev, non_blocking=True),
@@ -624,16 +633,22 @@ class FiddlerMixtral:
                     top_2_list = top_2s[i_expert].tolist()
                     idx_list = idxs[i_expert].tolist()
                     current_state = inps[None, top_2_list].reshape(-1, hidden_dim)
-                    current_state = self.run_expert_at_cpu(
-                        i_layer,
-                        i_expert,
-                        current_state.to("cpu"),
-                        routing_weights[top_2_list, idx_list, None].to("cpu"),
-                    )
+                    with record_function("offload_to_cpu"):
+                        current_state_cpu = current_state.to("cpu")
+                        routing_weights_cpu = routing_weights[top_2_list, idx_list, None].to("cpu")
+                    with record_function("cpu_forward"):
+                        current_state = self.run_expert_at_cpu(
+                            i_layer,
+                            i_expert,
+                            current_state_cpu,
+                            routing_weights_cpu,
+                        )
+                    with record_function("offload_to_gpu"):
+                        current_state = current_state.to(self.dev, non_blocking=True)
                     inps_after_experts.index_add_(
                         0,
                         top_2s[i_expert].to(self.dev, non_blocking=True),
-                        current_state.to(self.dev, non_blocking=True),
+                        current_state,
                     )
 
             # addition because there's residual connection over moe layer
