@@ -56,7 +56,34 @@ class FiddlerMixtral:
 
         self.bring_expert_to_gpu()
 
+        self._register_attn_profiler_hooks()
+
         print("Model is ready.")
+
+    def _register_attn_profiler_hooks(self):
+        """为每层 self_attn 的 q/k/v/o 投影注册 record，便于 trace 里区分 CPU/GPU 在做什么。"""
+        def make_handles(name):
+            ctx = [None]
+
+            def pre_hook(module, input):
+                ctx[0] = record_function(name)
+                ctx[0].__enter__()
+
+            def post_hook(module, input, output):
+                if ctx[0] is not None:
+                    ctx[0].__exit__(None, None, None)
+                    ctx[0] = None
+
+            return pre_hook, post_hook
+
+        for i_layer, layer in enumerate(self.model.layers):
+            for proj_name in ("q_proj", "k_proj", "v_proj", "o_proj"):
+                sub = getattr(layer.self_attn, proj_name, None)
+                if sub is not None:
+                    label = f"yyj:layer_{i_layer}_attn_{proj_name}"
+                    pre, post = make_handles(label)
+                    sub.register_forward_pre_hook(pre)
+                    sub.register_forward_hook(post)
 
     def bring_non_expert_to_gpu(self):
         """Bring non-expert layers to GPU"""
