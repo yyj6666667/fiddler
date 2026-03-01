@@ -208,7 +208,7 @@ def eval(model):
                         else [ProfilerActivity.CPU],
                         record_shapes=True,
                         profile_memory=True,
-                        with_stack=True,
+                        with_stack=False,
                         with_flops=True,
                     ) as prof:
                         with record_function("model_generate"):
@@ -236,10 +236,10 @@ def eval(model):
                         )
                     )
 
-                    # 根据 framework 命名 trace 文件，方便区分不同 inference engine
+                    # 根据 framework 命名 trace 文件（no_stack 避免覆盖原 with_stack 报告）
                     trace_path = os.path.join(
                         BENCHMARKS_DIR, args.output_dir,
-                        f"{args.framework}_profiler_trace.json",
+                        f"{args.framework}_profiler_trace_no_stack.json",
                     )
                     prof.export_chrome_trace(trace_path)
                     logging.info(

@@ -41,7 +41,7 @@ if __name__ == "__main__":
     parser.add_argument(
         "--profile",
         action="store_true",
-        help="启用 PyTorch Profiler：Chrome trace 保存到 asset/fiddler_profiler_trace.json，内存时间线 HTML 保存到 asset/fiddler_memory_timeline.html。",
+        help="启用 PyTorch Profiler：Chrome trace 保存到 asset/fiddler_profiler_trace_no_stack.json，内存时间线 HTML 保存到 asset/fiddler_memory_timeline.html。",
     )
 
     args = parser.parse_args()
@@ -57,7 +57,7 @@ if __name__ == "__main__":
             activities=activities,
             record_shapes=True,
             profile_memory=True,
-            with_stack=True,
+            with_stack=False,
             with_flops=True,
         ) as prof:
             with record_function("fiddler_generate"):
@@ -77,7 +77,7 @@ if __name__ == "__main__":
         asset_dir = os.path.join(project_root, "asset")
         os.makedirs(asset_dir, exist_ok=True)
 
-        trace_path = os.path.join(asset_dir, "fiddler_profiler_trace.json")
+        trace_path = os.path.join(asset_dir, "fiddler_profiler_trace_no_stack.json")
         prof.export_chrome_trace(trace_path)
         print(
             f"Chrome trace 已保存到 {trace_path}，可用 chrome://tracing 打开查看。"

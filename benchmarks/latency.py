@@ -40,7 +40,7 @@ if __name__ == "__main__":
     parser.add_argument(
         "--profile",
         action="store_true",
-        help="启用 PyTorch Profiler 对第一次 Fiddler 推理进行性能分析，并导出 fiddler_profiler_trace.json。",
+        help="启用 PyTorch Profiler 对第一次 Fiddler 推理进行性能分析，并导出 fiddler_profiler_trace_no_stack.json。",
     )
     parser.add_argument(
         "--output-dir",
@@ -66,7 +66,7 @@ if __name__ == "__main__":
     random.seed(0)
     random.shuffle(texts)
     model = FiddlerMixtral(args)
-    n_sample = 3
+    n_sample = 1
 
     did_profile = False
 
@@ -92,7 +92,7 @@ if __name__ == "__main__":
                         activities=activities,
                         record_shapes=True,
                         profile_memory=True,
-                        with_stack=True,
+                        with_stack=False,
                     ) as prof:
                         with record_function("fiddler_generate"):
                             prefill_time, decode_time, hit_rate = model.generate(
@@ -111,7 +111,7 @@ if __name__ == "__main__":
                     )
                     print(prof.key_averages().table(sort_by=sort_key, row_limit=30))
 
-                    trace_path = os.path.join(args.output_dir, "fiddler_profiler_trace.json")
+                    trace_path = os.path.join(args.output_dir, "fiddler_profiler_trace_no_stack.json")
                     prof.export_chrome_trace(trace_path)
                     print(
                         f"Chrome trace 已保存到 {trace_path}，可用 chrome://tracing 打开查看。"
