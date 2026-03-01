@@ -532,10 +532,11 @@ class FiddlerMixtral:
                             continue
 
                         # torch.cuda.synchronize()
-                        top_2_list = top_2.tolist()
-                        idx_list = idx.tolist()
+                        with record_function("yyj:token_dispatch"):
+                            top_2_list = top_2.tolist()
+                            idx_list = idx.tolist()
 
-                        current_state = inps[None, top_2_list].reshape(-1, hidden_dim)
+                            current_state = inps[None, top_2_list].reshape(-1, hidden_dim)
                         if not is_cuda:
                             with record_function("yyj:offload_to_gpu"):
                                 self.expert_placeholder.load_state_dict(
@@ -550,9 +551,10 @@ class FiddlerMixtral:
                                 current_state = experts[i_expert](
                                     current_state, routing_weights[top_2_list, idx_list, None]
                                 )
-                        inps_after_experts.index_add_(
-                            0, top_2, current_state.to(inps.dtype)
-                        )
+                        with record_function("yyj:expert_accumulate"):
+                            inps_after_experts.index_add_(
+                                0, top_2, current_state.to(inps.dtype)
+                            )
 
                         if not is_cuda:
                             with record_function("yyj:offload_to_cpu"):
@@ -613,9 +615,10 @@ class FiddlerMixtral:
                             gpu_experts.append(i_expert)
 
                     for i_expert in gpu_experts:
-                        top_2_list = top_2s[i_expert].tolist()
-                        idx_list = idxs[i_expert].tolist()
-                        current_state = inps[None, top_2_list].reshape(-1, hidden_dim)
+                        with record_function("yyj:token_dispatch"):
+                            top_2_list = top_2s[i_expert].tolist()
+                            idx_list = idxs[i_expert].tolist()
+                            current_state = inps[None, top_2_list].reshape(-1, hidden_dim)
                         if self.is_expert_in_gpu(i_layer, i_expert):
                             with record_function("yyj:gpu_forward"):
                                 current_state = experts[i_expert](
@@ -630,16 +633,18 @@ class FiddlerMixtral:
                                 current_state = self.expert_placeholder(
                                     current_state, routing_weights[top_2_list, idx_list, None]
                                 )
-                        inps_after_experts.index_add_(
-                            0,
-                            top_2s[i_expert].to(self.dev, non_blocking=True),
-                            current_state.to(self.dev, non_blocking=True),
-                        )
+                        with record_function("yyj:expert_accumulate"):
+                            inps_after_experts.index_add_(
+                                0,
+                                top_2s[i_expert].to(self.dev, non_blocking=True),
+                                current_state.to(self.dev, non_blocking=True),
+                            )
 
                     for i_expert in cpu_experts:
-                        top_2_list = top_2s[i_expert].tolist()
-                        idx_list = idxs[i_expert].tolist()
-                        current_state = inps[None, top_2_list].reshape(-1, hidden_dim)
+                        with record_function("yyj:token_dispatch"):
+                            top_2_list = top_2s[i_expert].tolist()
+                            idx_list = idxs[i_expert].tolist()
+                            current_state = inps[None, top_2_list].reshape(-1, hidden_dim)
                         with record_function("yyj:offload_to_cpu"):
                             current_state_cpu = current_state.to("cpu")
                             routing_weights_cpu = routing_weights[top_2_list, idx_list, None].to("cpu")
@@ -652,11 +657,12 @@ class FiddlerMixtral:
                             )
                         with record_function("yyj:offload_to_gpu"):
                             current_state = current_state.to(self.dev, non_blocking=True)
-                        inps_after_experts.index_add_(
-                            0,
-                            top_2s[i_expert].to(self.dev, non_blocking=True),
-                            current_state,
-                        )
+                        with record_function("yyj:expert_accumulate"):
+                            inps_after_experts.index_add_(
+                                0,
+                                top_2s[i_expert].to(self.dev, non_blocking=True),
+                                current_state,
+                            )
 
             # addition because there's residual connection over moe layer
             with record_function(f"yyj:layer_{i_layer}_ffn_residual"):
