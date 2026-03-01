@@ -202,6 +202,8 @@ def eval(model):
 
                 # 只对第一次推理做一次完整的 PyTorch Profiler，避免开销太大
                 if args.profile and (not did_profile):
+                    if torch.cuda.is_available():
+                        torch.cuda.memory._record_memory_history()
                     with profile(
                         activities=[ProfilerActivity.CPU, ProfilerActivity.CUDA]
                         if torch.cuda.is_available()
@@ -245,19 +247,23 @@ def eval(model):
                     logging.info(
                         f"Chrome trace 已保存到 {trace_path}，可用 chrome://tracing 打开查看。"
                     )
-                    memory_html_path = os.path.join(
-                        BENCHMARKS_DIR, args.output_dir,
-                        f"{args.framework}_memory_timeline.html",
-                    )
-                    try:
-                        prof.export_memory_timeline(memory_html_path)
-                        logging.info(
-                            f"内存时间线 HTML 已保存到 {memory_html_path}，用浏览器打开可查看内存变化。"
+                    if torch.cuda.is_available():
+                        memory_snapshot_path = os.path.join(
+                            BENCHMARKS_DIR, args.output_dir,
+                            f"{args.framework}_memory_snapshot.pickle",
                         )
-                    except Exception as e:
-                        logging.warning(
-                            "导出内存时间线时出错（可能在不支持的环境下）：%s；Chrome trace 仍可用。", e
-                        )
+                        try:
+                            torch.cuda.memory._dump_snapshot(memory_snapshot_path)
+                            logging.info(
+                                "内存快照已保存到 %s，可拖入 https://pytorch.org/memory_viz 查看。",
+                                memory_snapshot_path,
+                            )
+                        except Exception as e:
+                            logging.warning(
+                                "导出内存快照时出错：%s；Chrome trace 仍可用。", e
+                            )
+                        finally:
+                            torch.cuda.memory._record_memory_history(enabled=None)
                 else:
                     result = model.generate(
                         input_ids=input_ids[:, :input_token],

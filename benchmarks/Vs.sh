@@ -67,12 +67,12 @@ echo "=== 完成 ==="
 echo "输出目录: ${VS_OUTPUT_DIR}/"
 if [[ "$FIDDLER_ONLY" -eq 1 ]]; then
   echo "  - fiddler_profiler_trace_no_stack.json"
-  echo "  - fiddler_memory_timeline.html"
+  echo "  - fiddler_memory_snapshot.pickle"
   echo "  - latency.txt"
 else
   echo "  - mixtral-offloading_profiler_trace_no_stack.json"
-  echo "  - mixtral-offloading_memory_timeline.html"
+  echo "  - mixtral-offloading_memory_snapshot.pickle"
   echo "  - fiddler_profiler_trace_no_stack.json"
-  echo "  - fiddler_memory_timeline.html"
+  echo "  - fiddler_memory_snapshot.pickle"
   echo "  - latency.txt"
 fi

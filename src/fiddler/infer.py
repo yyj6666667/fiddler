@@ -41,13 +41,15 @@ if __name__ == "__main__":
     parser.add_argument(
         "--profile",
         action="store_true",
-        help="启用 PyTorch Profiler：Chrome trace 保存到 asset/fiddler_profiler_trace_no_stack.json，内存时间线 HTML 保存到 asset/fiddler_memory_timeline.html。",
+        help="启用 PyTorch Profiler：Chrome trace 保存到 asset/fiddler_profiler_trace_no_stack.json，内存快照保存到 asset/fiddler_memory_snapshot.pickle（可拖入 https://pytorch.org/memory_viz 查看）。",
     )
 
     args = parser.parse_args()
     model = FiddlerMixtral(args)
 
     if args.profile:
+        if torch.cuda.is_available():
+            torch.cuda.memory._record_memory_history()
         activities = (
             [ProfilerActivity.CPU, ProfilerActivity.CUDA]
             if torch.cuda.is_available()
@@ -82,17 +84,19 @@ if __name__ == "__main__":
         print(
             f"Chrome trace 已保存到 {trace_path}，可用 chrome://tracing 打开查看。"
         )
-
-        memory_html_path = os.path.join(asset_dir, "fiddler_memory_timeline.html")
-        try:
-            prof.export_memory_timeline(memory_html_path)
-            print(
-                f"内存时间线 HTML 已保存到 {memory_html_path}，用浏览器打开可查看内存变化。"
-            )
-        except Exception as e:
-            print(
-                f"导出内存时间线时出错（可能在不支持的环境下）：{e}；Chrome trace 仍可用。"
-            )
+        if torch.cuda.is_available():
+            memory_snapshot_path = os.path.join(asset_dir, "fiddler_memory_snapshot.pickle")
+            try:
+                torch.cuda.memory._dump_snapshot(memory_snapshot_path)
+                print(
+                    f"内存快照已保存到 {memory_snapshot_path}，可拖入 https://pytorch.org/memory_viz 查看。"
+                )
+            except Exception as e:
+                print(
+                    f"导出内存快照时出错：{e}；Chrome trace 仍可用。"
+                )
+            finally:
+                torch.cuda.memory._record_memory_history(enabled=None)
     else:
         prefill_time, decode_time, hit_rate = model.generate(
             args.input, output_token=args.n_token
