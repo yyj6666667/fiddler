@@ -481,7 +481,7 @@ class FiddlerMixtral:
         return (
             prefill_time,
             decode_time,
-            self.cnt_expert_hit / self.cnt_expert_all,
+            self.cnt_expert_hit / self.cnt_expert_all if self.cnt_expert_all else 0.0,
         )
 
     def tokenize(self, text):
