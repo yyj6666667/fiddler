@@ -62,6 +62,11 @@ if __name__ == "__main__":
     )
     parser.add_argument("--beam_width", type=int, default=1, help="Beam search width.")
     parser.add_argument(
+        "--no-hot",
+        action="store_true",
+        help="专家放置随机化：不按 profile 热点顺序，随机选择哪些专家常驻 GPU（用于公平对比）。",
+    )
+    parser.add_argument(
         "--profile",
         action="store_true",
         help="启用 PyTorch Profiler：trace 与内存快照文件名会包含 cpu_offload，写入 --output-dir（可拖入 chrome://tracing 与 https://pytorch.org/memory_viz）。",

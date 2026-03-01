@@ -1,4 +1,5 @@
 import copy
+import random
 import threading
 import time
 
@@ -51,7 +52,15 @@ class FiddlerMixtral:
             f"Number of experts on GPU: {n_expert_on_gpu}/{self.n_layer * self.n_expert}"
         )
 
-        self.set_expert_loc(n_expert_on_gpu)
+        if getattr(args, "no_hot", False):
+            all_pairs = [
+                (i, j) for i in range(self.n_layer) for j in range(self.n_expert)
+            ]
+            random.shuffle(all_pairs)
+            self.set_expert_loc(n_expert_on_gpu, popular_experts=all_pairs)
+            print("Expert placement: random (--no-hot).")
+        else:
+            self.set_expert_loc(n_expert_on_gpu)
         # print(self.expert_loc)
 
         self.bring_expert_to_gpu()

@@ -144,6 +144,11 @@ if __name__ == "__main__":
         choices=[0, 1],
         help="0: execute at GPU (baseline), 1: offload to CPU.",
     )
+    parser.add_argument(
+        "--no-hot",
+        action="store_true",
+        help="专家放置随机化：不按热点顺序，随机选择哪些专家常驻 GPU。",
+    )
 
     args = parser.parse_args()
 

@@ -35,6 +35,11 @@ if __name__ == "__main__":
         help="Number of tokens to generate.",
     )
     parser.add_argument("--beam-width", type=int, default=1, help="Beam search width.")
+    parser.add_argument(
+        "--no-hot",
+        action="store_true",
+        help="专家放置随机化：不按 profile 热点顺序，随机选择哪些专家常驻 GPU（用于公平对比）。",
+    )
 
     args = parser.parse_args()
     model = FiddlerMixtral(args)
