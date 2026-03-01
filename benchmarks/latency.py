@@ -151,6 +151,9 @@ if __name__ == "__main__":
             print(
                 f"prefill_time: {prefill_time}, decode_time: {decode_time}, hit_rate: {hit_rate}"
             )
+            del model
+            if torch.cuda.is_available():
+                torch.cuda.empty_cache()
         write_comparison(args.output_dir, results, output_token)
         print(
             f"\n汇总: prefill_time (0/1) = {results[0][1]:.4f}/{results[1][1]:.4f}s, "
