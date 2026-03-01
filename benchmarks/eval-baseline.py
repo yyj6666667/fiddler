@@ -245,6 +245,19 @@ def eval(model):
                     logging.info(
                         f"Chrome trace 已保存到 {trace_path}，可用 chrome://tracing 打开查看。"
                     )
+                    memory_html_path = os.path.join(
+                        BENCHMARKS_DIR, args.output_dir,
+                        f"{args.framework}_memory_timeline.html",
+                    )
+                    try:
+                        prof.export_memory_timeline(memory_html_path)
+                        logging.info(
+                            f"内存时间线 HTML 已保存到 {memory_html_path}，用浏览器打开可查看内存变化。"
+                        )
+                    except Exception as e:
+                        logging.warning(
+                            "导出内存时间线时出错（可能在不支持的环境下）：%s；Chrome trace 仍可用。", e
+                        )
                 else:
                     result = model.generate(
                         input_ids=input_ids[:, :input_token],

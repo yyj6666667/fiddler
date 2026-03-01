@@ -40,7 +40,7 @@ if __name__ == "__main__":
     parser.add_argument(
         "--profile",
         action="store_true",
-        help="启用 PyTorch Profiler 对第一次 Fiddler 推理进行性能分析，并导出 fiddler_profiler_trace_no_stack.json。",
+        help="启用 PyTorch Profiler 对第一次 Fiddler 推理进行性能分析，并导出 fiddler_profiler_trace_no_stack.json 与 fiddler_memory_timeline.html。",
     )
     parser.add_argument(
         "--output-dir",
@@ -83,6 +83,7 @@ if __name__ == "__main__":
                         break
 
                 if args.profile and (not did_profile):
+                    # 内存时间线仅记录本 with 块内（第一次 generate：prefill+decode），不包含模型加载等
                     activities = (
                         [ProfilerActivity.CPU, ProfilerActivity.CUDA]
                         if torch.cuda.is_available()
@@ -90,7 +91,6 @@ if __name__ == "__main__":
                     )
                     with profile(
                         activities=activities,
-                        record_shapes=True,
                         profile_memory=True,
                         with_stack=False,
                     ) as prof:
@@ -116,6 +116,16 @@ if __name__ == "__main__":
                     print(
                         f"Chrome trace 已保存到 {trace_path}，可用 chrome://tracing 打开查看。"
                     )
+                    memory_html_path = os.path.join(args.output_dir, "fiddler_memory_timeline.html")
+                    try:
+                        prof.export_memory_timeline(memory_html_path)
+                        print(
+                            f"内存时间线 HTML 已保存到 {memory_html_path}，用浏览器打开可查看内存变化。"
+                        )
+                    except Exception as e:
+                        print(
+                            f"导出内存时间线时出错（可能在不支持的环境下）：{e}；Chrome trace 仍可用。"
+                        )
                 else:
                     prefill_time, decode_time, hit_rate = model.generate(
                         [text], output_token=output_token, input_token=input_token
