@@ -67,12 +67,6 @@ if __name__ == "__main__":
                     args.input, output_token=args.n_token
                 )
 
-        print("PyTorch profiler summary for Fiddler (top 30 by time):")
-        sort_key = (
-            "cuda_time_total" if torch.cuda.is_available() else "cpu_time_total"
-        )
-        print(prof.key_averages().table(sort_by=sort_key, row_limit=30))
-
         project_root = os.path.dirname(
             os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
         )

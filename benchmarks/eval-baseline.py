@@ -227,17 +227,6 @@ def eval(model):
 
                     did_profile = True
 
-                    logging.info("PyTorch profiler summary (top 30 by CUDA time):")
-                    logging.info(
-                        "\n"
-                        + prof.key_averages().table(
-                            sort_by="cuda_time_total"
-                            if torch.cuda.is_available()
-                            else "cpu_time_total",
-                            row_limit=30,
-                        )
-                    )
-
                     # 根据 framework 命名 trace 文件（no_stack 避免覆盖原 with_stack 报告）
                     trace_path = os.path.join(
                         BENCHMARKS_DIR, args.output_dir,

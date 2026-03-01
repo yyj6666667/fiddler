@@ -105,14 +105,6 @@ if __name__ == "__main__":
 
                     did_profile = True
 
-                    print("PyTorch profiler summary for Fiddler (top 30 by time):")
-                    sort_key = (
-                        "cuda_time_total"
-                        if torch.cuda.is_available()
-                        else "cpu_time_total"
-                    )
-                    print(prof.key_averages().table(sort_by=sort_key, row_limit=30))
-
                     trace_path = os.path.join(args.output_dir, "fiddler_profiler_trace_no_stack.json")
                     prof.export_chrome_trace(trace_path)
                     print(
