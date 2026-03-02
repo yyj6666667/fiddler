@@ -13,9 +13,12 @@ mkdir -p /home/yyj/fiddler/benchmarks/nsys_overlap_reports
 
 cd /home/yyj/fiddler/benchmarks
 
-sudo /usr/local/cuda/bin/nsys profile \
+# 在运行脚本前设置环境变量
+export HF_HOME="/home/yyj/.cache/huggingface"
+
+sudo -E /usr/local/cuda/bin/nsys profile \
   --output="/home/yyj/fiddler/benchmarks/nsys_overlap_reports/nsys_compare_overlap" \
-  --trace=cuda,nvtx\
+  --trace=cuda,nvtx \
   --sample=cpu \
   --gpu-metrics-device=none \
   --capture-range=cudaProfilerApi \
