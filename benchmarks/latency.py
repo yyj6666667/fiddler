@@ -145,7 +145,7 @@ if __name__ == "__main__":
         args.cpu_offload = 1
         # CUDA Profiler API：供 nsys -c cudaProfilerApi 精确采集此段
         if torch.cuda.is_available():
-            torch.cuda.cudaProfilerStart()
+            torch.cuda.cudart().cudaProfilerStart()
             print("[cudaProfilerApi] 采集范围已开启，nsys 将采集此段时间线。")
         else:
             print("[cudaProfilerApi] 未检测到 CUDA，未触发，nsys 可能不会生成 .nsys-rep。")
@@ -189,7 +189,7 @@ if __name__ == "__main__":
                     torch.cuda.empty_cache()
         finally:
             if torch.cuda.is_available():
-                torch.cuda.cudaProfilerStop()
+                torch.cuda.cudart().cudaProfilerStop()
                 print("[cudaProfilerApi] 采集范围已结束。")
         write_comparison_overlap(args.output_dir, results, output_token)
         print(
