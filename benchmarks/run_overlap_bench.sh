@@ -22,42 +22,42 @@ for size in "${SIZES[@]}"; do
             OVERLAP_LABEL="no-overlap"
             OVERLAP_FLAG=""
         fi
-        
+
         echo "------------------------------------------------"
         echo "Testing Size: $size, Mode: $OVERLAP_LABEL"
         echo "------------------------------------------------"
-        
+
         # Run latency.py and capture output
         # We use --cpu-offload 1 since overlap only applies to offloading
-        OUTPUT=$(python benchmarks/latency.py \
+        OUTPUT=$(python latency.py \
             --model "$MODEL" \
             --cpu-offload 1 \
             $OVERLAP_FLAG \
             --input-token "$size" \
             --output-token "$size" \
             2>&1)
-        
+
         # Extract values using grep and sed
         # Expected line format: prefill_time: 0.1234, decode_time: 0.5678, hit_rate: 0.9
         METRICS_LINE=$(echo "$OUTPUT" | grep "prefill_time:" | tail -n 1)
-        
+
         if [ -z "$METRICS_LINE" ]; then
             echo "Error: Could not find metrics in output for size $size, overlap $overlap"
             echo "Output was:"
             echo "$OUTPUT"
             continue
         fi
-        
+
         PREFILL=$(echo "$METRICS_LINE" | sed -E 's/.*prefill_time: ([0-9.]+).*/\1/')
         DECODE=$(echo "$METRICS_LINE" | sed -E 's/.*decode_time: ([0-9.]+).*/\1/')
         HIT_RATE=$(echo "$METRICS_LINE" | sed -E 's/.*hit_rate: ([0-9.]+).*/\1/')
-        
+
         # Calculate tokens per second (output_tokens / (prefill + decode))
         # Use awk for floating point math
         TOKENS_PER_SEC=$(awk "BEGIN {print $size / ($PREFILL + $DECODE)}")
-        
+
         echo "$size,$overlap,$PREFILL,$DECODE,$HIT_RATE,$TOKENS_PER_SEC" >> $OUTPUT_CSV
-        
+
         echo "Size: $size, Overlap: $overlap"
         echo "  Prefill Time: $PREFILL s"
         echo "  Decode Time:  $DECODE s"
