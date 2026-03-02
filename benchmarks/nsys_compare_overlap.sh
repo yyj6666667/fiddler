@@ -29,19 +29,19 @@ fi
 mkdir -p "$OUTPUT_DIR"
 cd "$BENCHMARKS_DIR"
 
-# nsys: -t cuda,nvtx,osrt 采集 CUDA 与 OS 运行时；--force-overwrite 覆盖旧报告
-# -c nvtx -p train_loop: 精确打击，仅当执行到代码里 NVTX 标记的 train_loop 区域时采集
-#   若未在 Python 里打 NVTX 的 train_loop 标记，可去掉 -c nvtx 与 -p train_loop 改为全程采集
+# nsys: --trace=cuda,nvtx,osrt 采集 CUDA 与 OS 运行时；--force-overwrite 覆盖旧报告
+# --capture-range=nvtx --nvtx-capture=train_loop: 精确打击，仅当执行到代码里 NVTX 标记的 train_loop 区域时采集
+#   若未在 Python 里打 NVTX 的 train_loop 标记，可去掉这两项改为全程采集
 # latency.py: --compare-overlap 依次跑 overlap=0 与 overlap=1，且不传 --profile
 echo "=== Nsight Systems 采集 overlap 对比 (不并行 -> 并行) ==="
 echo "输出目录: $OUTPUT_DIR"
 echo ""
 
 nsys profile \
-  -o "${OUTPUT_DIR}/nsys_compare_overlap" \
-  -t cuda,nvtx,osrt \
+  --output="${OUTPUT_DIR}/nsys_compare_overlap" \
+  --trace=cuda,nvtx,osrt \
   --capture-range=nvtx \
-  -p train_loop \
+  --nvtx-capture=train_loop \
   --force-overwrite=true \
   --stats=true \
   -- \
