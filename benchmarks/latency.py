@@ -163,7 +163,7 @@ if __name__ == "__main__":
                 print(
                     f"[cudaProfilerApi] 采集范围已开启 (overlap={int(use_overlap)})，nsys 将采集此段时间线。"
                 )
-            try:
+            if 1:
                 args.overlap = use_overlap
                 label = "并行" if use_overlap else "不并行"
                 print(f"\n=== cpu_offload=1, overlap={int(use_overlap)} ({label}) ===")
@@ -200,10 +200,10 @@ if __name__ == "__main__":
                 del model
                 if torch.cuda.is_available():
                     torch.cuda.empty_cache()
-            finally:
+            if 1:
                 if args.nsys_overlap_run is not None and torch.cuda.is_available():
-                    torch.cuda.cudart().cudaProfilerStop()
                     print("[cudaProfilerApi] 采集范围已结束。")
+                    torch.cuda.cudart().cudaProfilerStop()
         if len(results) == 2:
             write_comparison_overlap(args.output_dir, results, output_token)
             print(
