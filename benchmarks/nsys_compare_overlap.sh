@@ -40,7 +40,7 @@ echo ""
 nsys profile \
   -o "${OUTPUT_DIR}/nsys_compare_overlap" \
   -t cuda,nvtx,osrt \
-  -c nvtx \
+  --capture-range=nvtx \
   -p train_loop \
   --force-overwrite=true \
   --stats=true \
