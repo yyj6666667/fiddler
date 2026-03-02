@@ -625,20 +625,26 @@ class FiddlerMixtral:
                             self.cnt_expert_hit += top_2.shape[0]
                         self.cnt_expert_all += top_2.shape[0]
 
-                    # second, partition experts processing between CPU and GPU so that we can minimize:
-                    # max(sum of cost at CPU, sum of cost at GPU)
-                    # greedy algorithm is just as there are only 8 experts for Mixtral
+                    # second, partition experts between CPU and GPU:
+                    # - with overlap: minimize max(CPU_total, GPU_total) for balanced parallel
+                    # - without overlap: minimize CPU_total + GPU_total for serial
                     best_config = -1
                     best_cost = float("inf")
                     for config in range(1 << len(experts)):
-                        sum_cost = 0
+                        cpu_total = 0.0
+                        gpu_total = 0.0
                         for i_expert in range(len(experts)):
                             if (config >> i_expert) & 1:
-                                sum_cost += cost_per_expert[i_expert, 0]
+                                cpu_total += cost_per_expert[i_expert, 0]
                             else:
-                                sum_cost += cost_per_expert[i_expert, 1]
-                        if sum_cost < best_cost:
-                            best_cost = sum_cost
+                                gpu_total += cost_per_expert[i_expert, 1]
+                        cost = (
+                            max(cpu_total, gpu_total)
+                            if self.overlap
+                            else (cpu_total + gpu_total)
+                        )
+                        if cost < best_cost:
+                            best_cost = cost
                             best_config = config
 
                     # then, we can offload the experts according to the best
