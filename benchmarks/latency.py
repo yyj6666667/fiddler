@@ -97,7 +97,7 @@ if __name__ == "__main__":
     parser.add_argument(
         "--profile",
         action="store_true",
-        help="启用 PyTorch Profiler：trace 与内存快照文件名会包含 cpu_offload，写入 --output-dir（可拖入 chrome://tracing 与 https://pytorch.org/memory_viz）。",
+        help="启用 PyTorch Profiler：trace 写入 --output-dir（可拖入 chrome://tracing）。",
     )
     parser.add_argument(
         "--compare-cpu-offload",
@@ -149,8 +149,6 @@ if __name__ == "__main__":
             print(f"\n=== cpu_offload=1, overlap={int(use_overlap)} ({label}) ===")
             model = FiddlerMixtral(args)
             if args.profile:
-                if torch.cuda.is_available():
-                    torch.cuda.memory._record_memory_history()
                 activities = (
                     [ProfilerActivity.CPU, ProfilerActivity.CUDA]
                     if torch.cuda.is_available()
@@ -171,18 +169,6 @@ if __name__ == "__main__":
                 trace_path = os.path.join(args.output_dir, trace_basename)
                 prof.export_chrome_trace(trace_path)
                 print(f"Chrome trace 已保存到 {trace_path}，可用 chrome://tracing 打开查看。")
-                if torch.cuda.is_available():
-                    snapshot_basename = f"fiddler_memory_snapshot_cpu_offload_1_overlap_{int(use_overlap)}.pickle"
-                    memory_snapshot_path = os.path.join(args.output_dir, snapshot_basename)
-                    try:
-                        torch.cuda.memory._dump_snapshot(memory_snapshot_path)
-                        print(
-                            f"内存快照已保存到 {memory_snapshot_path}，可拖入 https://pytorch.org/memory_viz 查看。"
-                        )
-                    except Exception as e:
-                        print(f"导出内存快照时出错：{e}；Chrome trace 仍可用。")
-                    finally:
-                        torch.cuda.memory._record_memory_history(enabled=None)
             else:
                 prefill_time, decode_time, hit_rate = model.generate(
                     [text], output_token=output_token, input_token=input_token
@@ -216,8 +202,6 @@ if __name__ == "__main__":
             print(f"\n=== cpu_offload={offload} ===")
             model = FiddlerMixtral(args)
             if args.profile:
-                if torch.cuda.is_available():
-                    torch.cuda.memory._record_memory_history()
                 activities = (
                     [ProfilerActivity.CPU, ProfilerActivity.CUDA]
                     if torch.cuda.is_available()
@@ -238,18 +222,6 @@ if __name__ == "__main__":
                 trace_path = os.path.join(args.output_dir, trace_basename)
                 prof.export_chrome_trace(trace_path)
                 print(f"Chrome trace 已保存到 {trace_path}，可用 chrome://tracing 打开查看。")
-                if torch.cuda.is_available():
-                    snapshot_basename = f"fiddler_memory_snapshot_cpu_offload_{offload}.pickle"
-                    memory_snapshot_path = os.path.join(args.output_dir, snapshot_basename)
-                    try:
-                        torch.cuda.memory._dump_snapshot(memory_snapshot_path)
-                        print(
-                            f"内存快照已保存到 {memory_snapshot_path}，可拖入 https://pytorch.org/memory_viz 查看。"
-                        )
-                    except Exception as e:
-                        print(f"导出内存快照时出错：{e}；Chrome trace 仍可用。")
-                    finally:
-                        torch.cuda.memory._record_memory_history(enabled=None)
             else:
                 prefill_time, decode_time, hit_rate = model.generate(
                     [text], output_token=output_token, input_token=input_token
@@ -287,9 +259,6 @@ if __name__ == "__main__":
                         break
 
                 if args.profile and (not did_profile):
-                    # 内存快照仅记录本段（第一次 generate：prefill+decode），不包含模型加载等
-                    if torch.cuda.is_available():
-                        torch.cuda.memory._record_memory_history()
                     activities = (
                         [ProfilerActivity.CPU, ProfilerActivity.CUDA]
                         if torch.cuda.is_available()
@@ -315,20 +284,6 @@ if __name__ == "__main__":
                     print(
                         f"Chrome trace 已保存到 {trace_path}，可用 chrome://tracing 打开查看。"
                     )
-                    if torch.cuda.is_available():
-                        memory_snapshot_basename = f"fiddler_memory_snapshot_cpu_offload_{args.cpu_offload}.pickle"
-                        memory_snapshot_path = os.path.join(args.output_dir, memory_snapshot_basename)
-                        try:
-                            torch.cuda.memory._dump_snapshot(memory_snapshot_path)
-                            print(
-                                f"内存快照已保存到 {memory_snapshot_path}，可拖入 https://pytorch.org/memory_viz 查看。"
-                            )
-                        except Exception as e:
-                            print(
-                                f"导出内存快照时出错：{e}；Chrome trace 仍可用。"
-                            )
-                        finally:
-                            torch.cuda.memory._record_memory_history(enabled=None)
                 else:
                     prefill_time, decode_time, hit_rate = model.generate(
                         [text], output_token=output_token, input_token=input_token
