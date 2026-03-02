@@ -14,6 +14,9 @@ gcloud storage cp /home/yyj/fiddler/benchmarks/vs_output/fiddler_profiler_trace_
 gcloud storage cp /home/yyj/fiddler/benchmarks/vs_output/fiddler_profiler_trace_cpu_offload_1_overlap_0.json gs://856356105879-us-central1-blueprint-config/
 gcloud storage cp /home/yyj/fiddler/benchmarks/vs_output/fiddler_profiler_trace_cpu_offload_1_overlap_1.json gs://856356105879-us-central1-blueprint-config/
 
+gcloud storage cp /home/yyj/fiddler/benchmarks/my_report.nsys-rep gs://856356105879-us-central1-blueprint-config/
+
+
 ####
 # nsys overlap 时间线（nsys_compare_overlap.sh 默认输出目录）
 ####
@@ -34,6 +37,8 @@ gcloud storage cp gs://856356105879-us-central1-blueprint-config/fiddler_profile
 gcloud storage cp gs://856356105879-us-central1-blueprint-config/fiddler_profiler_trace_cpu_offload_1_overlap_1.json ./
 # nsys overlap 时间线
 gcloud storage cp gs://856356105879-us-central1-blueprint-config/nsys_compare_overlap.nsys-rep ./
+
+gcloud storage cp gs://856356105879-us-central1-blueprint-config/my_report.nsys-rep ./
 
 ####
 # with stack

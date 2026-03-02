@@ -13,8 +13,6 @@ cd "$BENCHMARKS_DIR"
 nsys profile \
   --output="${OUTPUT_DIR}/nsys_compare_overlap" \
   --trace=cuda,nvtx,osrt \
-  --capture-range=nvtx \
-  --nvtx-capture=train_loop \
   --force-overwrite=true \
   --stats=true \
   python latency.py --compare-overlap --output-dir "${OUTPUT_DIR}" "$@"
