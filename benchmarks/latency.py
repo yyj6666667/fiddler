@@ -158,16 +158,17 @@ if __name__ == "__main__":
             else [False, True]
         )
         for use_overlap in runs_to_do:
-            if args.nsys_overlap_run is not None and torch.cuda.is_available():
-                torch.cuda.cudart().cudaProfilerStart()
-                print(
-                    f"[cudaProfilerApi] 采集范围已开启 (overlap={int(use_overlap)})，nsys 将采集此段时间线。"
-                )
             if 1:
                 args.overlap = use_overlap
                 label = "并行" if use_overlap else "不并行"
                 print(f"\n=== cpu_offload=1, overlap={int(use_overlap)} ({label}) ===")
                 model = FiddlerMixtral(args)
+                #一定要放到后面， 否则就等着nsys-rep缓存爆炸吧
+                if args.nsys_overlap_run is not None and torch.cuda.is_available():
+                    torch.cuda.cudart().cudaProfilerStart()
+                    print(
+                        f"[cudaProfilerApi] 采集范围已开启 (overlap={int(use_overlap)})，nsys 将采集此段时间线。"
+                    )
                 if args.profile:
                     activities = (
                         [ProfilerActivity.CPU, ProfilerActivity.CUDA]
