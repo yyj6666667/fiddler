@@ -143,43 +143,50 @@ if __name__ == "__main__":
         text = texts[idx_text]
         results = []
         args.cpu_offload = 1
-        for use_overlap in [False, True]:
-            args.overlap = use_overlap
-            label = "并行" if use_overlap else "不并行"
-            print(f"\n=== cpu_offload=1, overlap={int(use_overlap)} ({label}) ===")
-            model = FiddlerMixtral(args)
-            if args.profile:
-                activities = (
-                    [ProfilerActivity.CPU, ProfilerActivity.CUDA]
-                    if torch.cuda.is_available()
-                    else [ProfilerActivity.CPU]
+        # NVTX 标记：供 nsys -c nvtx --capture-range-filter="train_loop" 精确采集此段
+        if torch.cuda.is_available():
+            torch.cuda.nvtx.range_push("train_loop")
+        try:
+            for use_overlap in [False, True]:
+                args.overlap = use_overlap
+                label = "并行" if use_overlap else "不并行"
+                print(f"\n=== cpu_offload=1, overlap={int(use_overlap)} ({label}) ===")
+                model = FiddlerMixtral(args)
+                if args.profile:
+                    activities = (
+                        [ProfilerActivity.CPU, ProfilerActivity.CUDA]
+                        if torch.cuda.is_available()
+                        else [ProfilerActivity.CPU]
+                    )
+                    with profile(
+                        activities=activities,
+                        profile_memory=True,
+                        with_stack=False,
+                    ) as prof:
+                        with record_function("fiddler_generate"):
+                            prefill_time, decode_time, hit_rate = model.generate(
+                                [text],
+                                output_token=output_token,
+                                input_token=input_token,
+                            )
+                    trace_basename = f"fiddler_profiler_trace_cpu_offload_1_overlap_{int(use_overlap)}.json"
+                    trace_path = os.path.join(args.output_dir, trace_basename)
+                    prof.export_chrome_trace(trace_path)
+                    print(f"Chrome trace 已保存到 {trace_path}，可用 chrome://tracing 打开查看。")
+                else:
+                    prefill_time, decode_time, hit_rate = model.generate(
+                        [text], output_token=output_token, input_token=input_token
+                    )
+                results.append((label, prefill_time, decode_time, hit_rate))
+                print(
+                    f"prefill_time: {prefill_time}, decode_time: {decode_time}, hit_rate: {hit_rate}"
                 )
-                with profile(
-                    activities=activities,
-                    profile_memory=True,
-                    with_stack=False,
-                ) as prof:
-                    with record_function("fiddler_generate"):
-                        prefill_time, decode_time, hit_rate = model.generate(
-                            [text],
-                            output_token=output_token,
-                            input_token=input_token,
-                        )
-                trace_basename = f"fiddler_profiler_trace_cpu_offload_1_overlap_{int(use_overlap)}.json"
-                trace_path = os.path.join(args.output_dir, trace_basename)
-                prof.export_chrome_trace(trace_path)
-                print(f"Chrome trace 已保存到 {trace_path}，可用 chrome://tracing 打开查看。")
-            else:
-                prefill_time, decode_time, hit_rate = model.generate(
-                    [text], output_token=output_token, input_token=input_token
-                )
-            results.append((label, prefill_time, decode_time, hit_rate))
-            print(
-                f"prefill_time: {prefill_time}, decode_time: {decode_time}, hit_rate: {hit_rate}"
-            )
-            del model
+                del model
+                if torch.cuda.is_available():
+                    torch.cuda.empty_cache()
+        finally:
             if torch.cuda.is_available():
-                torch.cuda.empty_cache()
+                torch.cuda.nvtx.range_pop()
         write_comparison_overlap(args.output_dir, results, output_token)
         print(
             f"\n汇总: prefill_time (不并行/并行) = {results[0][1]:.4f}/{results[1][1]:.4f}s, "
