@@ -151,9 +151,9 @@ if __name__ == "__main__":
         text = texts[idx_text]
         results = []
         args.cpu_offload = 1
-        # 仅跑一段时（--nsys-overlap-run=0|1）：该段外包 cudaProfilerStart/Stop，供 nsys 分别生成两段 .nsys-rep
+        # 仅跑一段时（--nsys-overlap-run=0|1）：只跑该段并外包 cudaProfilerStart/Stop，供 nsys 分别生成两段 .nsys-rep
         runs_to_do = (
-            [args.nsys_overlap_run == 0, args.nsys_overlap_run == 1]
+            [args.nsys_overlap_run == 1]  # 只跑 overlap=0 或 1 其中一段
             if args.nsys_overlap_run is not None
             else [False, True]
         )
