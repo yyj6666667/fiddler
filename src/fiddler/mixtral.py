@@ -747,7 +747,7 @@ class FiddlerMixtral:
                             else:
                                 gpu_total += cost_per_expert[i_expert, 1]
                         cost = (
-                            max(cpu_total, gpu_total) if self.overlap else (cpu_total + gpu_total)
+                             (cpu_total + gpu_total)
                         )
                         if cost < best_cost:
                             best_cost = cost
