@@ -146,6 +146,9 @@ if __name__ == "__main__":
         # NVTX 标记：供 nsys -c nvtx --capture-range-filter="train_loop" 精确采集此段
         if torch.cuda.is_available():
             torch.cuda.nvtx.range_push("train_loop")
+            print("[NVTX] train_loop 范围已开启，nsys 将采集此段时间线。")
+        else:
+            print("[NVTX] 未检测到 CUDA，train_loop 未触发，nsys 可能不会生成 .nsys-rep。")
         try:
             for use_overlap in [False, True]:
                 args.overlap = use_overlap
@@ -187,6 +190,7 @@ if __name__ == "__main__":
         finally:
             if torch.cuda.is_available():
                 torch.cuda.nvtx.range_pop()
+                print("[NVTX] train_loop 范围已结束。")
         write_comparison_overlap(args.output_dir, results, output_token)
         print(
             f"\n汇总: prefill_time (不并行/并行) = {results[0][1]:.4f}/{results[1][1]:.4f}s, "

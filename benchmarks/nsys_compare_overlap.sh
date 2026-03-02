@@ -17,7 +17,6 @@ nsys profile \
   --nvtx-capture=train_loop \
   --force-overwrite=true \
   --stats=true \
-  -- \
   python latency.py --compare-overlap --output-dir "${OUTPUT_DIR}" "$@"
 
 echo "完成: ${OUTPUT_DIR}/nsys_compare_overlap.nsys-rep 与 overlap_performance_comparison.md"
