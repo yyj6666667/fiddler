@@ -43,10 +43,10 @@ class FiddlerMixtral:
         if self.overlap:
             self._worker_ctx = {}
             self._worker_stop = False
-            self._gpu_done = [False]
-            self._cpu_done = [False]
             self._gpu_start_event = threading.Event()
             self._cpu_start_event = threading.Event()
+            self._gpu_done_event = threading.Event()
+            self._cpu_done_event = threading.Event()
             self._gpu_thread = threading.Thread(target=self._gpu_worker_loop, daemon=True)
             self._cpu_thread = threading.Thread(target=self._cpu_worker_loop, daemon=True)
             self._gpu_thread.start()
@@ -131,7 +131,7 @@ class FiddlerMixtral:
                         top_2s[i_expert].to(self.dev, non_blocking=True),
                         current_state.to(self.dev, non_blocking=True),
                     )
-            self._gpu_done[0] = True
+            self._gpu_done_event.set()
 
     def _cpu_worker_loop(self):
         while not self._worker_stop:
@@ -176,7 +176,7 @@ class FiddlerMixtral:
                             top_2s[i_expert].to(self.dev, non_blocking=True),
                             current_state,
                         )
-            self._cpu_done[0] = True
+            self._cpu_done_event.set()
 
     def _register_attn_profiler_hooks(self):
         """为每层 self_attn 的 q/k/v/o 投影注册 record，便于 trace 里区分 CPU/GPU 在做什么。"""
@@ -773,9 +773,9 @@ class FiddlerMixtral:
                         if self._cpu_copy_stream is not None:
                             torch.cuda.current_stream().synchronize()
 
-                        # 使用长运行的工作线程避免线程创建开销，并用忙等最小化延迟。
-                        self._gpu_done[0] = False
-                        self._cpu_done[0] = False
+                        # 使用长运行的工作线程避免线程创建开销。
+                        self._gpu_done_event.clear()
+                        self._cpu_done_event.clear()
                         self._worker_ctx = {
                             "gpu_experts": gpu_experts,
                             "cpu_experts": cpu_experts,
@@ -792,9 +792,9 @@ class FiddlerMixtral:
                         self._gpu_start_event.set()
                         self._cpu_start_event.set()
 
-                        # 忙等：主线程在 CPU 上高速循环查询，避免休眠唤醒延迟。
-                        while not (self._gpu_done[0] and self._cpu_done[0]):
-                            pass
+                        # 使用 Event 等待，解决忙等可能导致的死锁问题。
+                        self._gpu_done_event.wait()
+                        self._cpu_done_event.wait()
 
                         # CPU 线程在独立 stream 上写入了 inps_after_experts_cpu，合并前需同步该 stream，
                         # 确保所有 GPU 写回已完成，再与 inps_after_experts_gpu 相加，保证结果正确。
