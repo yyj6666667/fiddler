@@ -14,6 +14,29 @@ sys.path.append("../src")
 from fiddler import FiddlerMixtral
 
 
+def write_comparison_overlap(output_dir, results, output_token):
+    """将 cpu_offload=1 下 不并行/并行 的关键性能写入 output_dir/overlap_performance_comparison.md"""
+    # results: [(overlap_label, prefill_time, decode_time, hit_rate), ...]
+    total_time_0 = results[0][1] + results[0][2]
+    total_time_1 = results[1][1] + results[1][2]
+    tokens_per_sec_0 = output_token / total_time_0 if total_time_0 > 0 else 0
+    tokens_per_sec_1 = output_token / total_time_1 if total_time_1 > 0 else 0
+    path = os.path.join(output_dir, "overlap_performance_comparison.md")
+    with open(path, "w", encoding="utf-8") as f:
+        f.write("# Fiddler cpu_offload=1 下 不并行 vs 并行 关键性能对比\n\n")
+        f.write(f"生成时间: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}\n\n")
+        f.write("| 指标 | 不并行 (overlap=0) | 并行 (overlap=1) |\n")
+        f.write("|------|-------------------|------------------|\n")
+        f.write(f"| prefill_time (s) | {results[0][1]:.4f} | {results[1][1]:.4f} |\n")
+        f.write(f"| decode_time (s) | {results[0][2]:.4f} | {results[1][2]:.4f} |\n")
+        f.write(f"| hit_rate | {results[0][3]:.4f} | {results[1][3]:.4f} |\n")
+        f.write(f"| tokens/s | {tokens_per_sec_0:.2f} | {tokens_per_sec_1:.2f} |\n")
+        f.write(
+            "\n说明: cpu_offload=1 时，不并行为先跑完所有 GPU experts 再跑 CPU experts；并行为 GPU 与 CPU expert 双线程并行。\n"
+        )
+    print(f"关键性能对比已写入 {path}")
+
+
 def write_comparison(output_dir, results, output_token):
     """将 cpu_offload=0 与 1 的关键性能写入 output_dir/cpu_offload_performance_comparison.md"""
     total_time_0 = results[0][1] + results[0][2]
@@ -67,6 +90,11 @@ if __name__ == "__main__":
         help="专家放置随机化：不按 profile 热点顺序，随机选择哪些专家常驻 GPU（用于公平对比）。",
     )
     parser.add_argument(
+        "--overlap",
+        action="store_true",
+        help="GPU 与 CPU expert 计算并行（仅当 cpu_offload=1 时生效）。",
+    )
+    parser.add_argument(
         "--profile",
         action="store_true",
         help="启用 PyTorch Profiler：trace 与内存快照文件名会包含 cpu_offload，写入 --output-dir（可拖入 chrome://tracing 与 https://pytorch.org/memory_viz）。",
@@ -74,7 +102,12 @@ if __name__ == "__main__":
     parser.add_argument(
         "--compare-cpu-offload",
         action="store_true",
-        help="依次以 cpu_offload=0 与 1 各跑一次（input/output_token 同当前循环），将关键性能对比写入 output-dir/cpu_offload_performance_comparison.md。可与 --profile 同时使用。",
+        help="(已废弃，请用 --compare-overlap) 原为对比 cpu_offload=0 与 1。",
+    )
+    parser.add_argument(
+        "--compare-overlap",
+        action="store_true",
+        help="仅对比 cpu_offload=1 下 不并行 vs 并行：依次跑 overlap=0 与 overlap=1，将关键性能写入 output-dir/overlap_performance_comparison.md。可与 --profile 同时使用。",
     )
     parser.add_argument(
         "--output-dir",
@@ -99,6 +132,75 @@ if __name__ == "__main__":
 
     random.seed(0)
     random.shuffle(texts)
+
+    if args.compare_overlap:
+        input_token, output_token = 16, 16
+        idx_text = 0
+        while idx_text < len(texts) and len(texts[idx_text].split()) < input_token:
+            idx_text += 1
+        if idx_text >= len(texts):
+            raise SystemExit("compare-overlap: 未找到足够长的输入文本。")
+        text = texts[idx_text]
+        results = []
+        args.cpu_offload = 1
+        for use_overlap in [False, True]:
+            args.overlap = use_overlap
+            label = "并行" if use_overlap else "不并行"
+            print(f"\n=== cpu_offload=1, overlap={int(use_overlap)} ({label}) ===")
+            model = FiddlerMixtral(args)
+            if args.profile:
+                if torch.cuda.is_available():
+                    torch.cuda.memory._record_memory_history()
+                activities = (
+                    [ProfilerActivity.CPU, ProfilerActivity.CUDA]
+                    if torch.cuda.is_available()
+                    else [ProfilerActivity.CPU]
+                )
+                with profile(
+                    activities=activities,
+                    profile_memory=True,
+                    with_stack=False,
+                ) as prof:
+                    with record_function("fiddler_generate"):
+                        prefill_time, decode_time, hit_rate = model.generate(
+                            [text],
+                            output_token=output_token,
+                            input_token=input_token,
+                        )
+                trace_basename = f"fiddler_profiler_trace_cpu_offload_1_overlap_{int(use_overlap)}.json"
+                trace_path = os.path.join(args.output_dir, trace_basename)
+                prof.export_chrome_trace(trace_path)
+                print(f"Chrome trace 已保存到 {trace_path}，可用 chrome://tracing 打开查看。")
+                if torch.cuda.is_available():
+                    snapshot_basename = f"fiddler_memory_snapshot_cpu_offload_1_overlap_{int(use_overlap)}.pickle"
+                    memory_snapshot_path = os.path.join(args.output_dir, snapshot_basename)
+                    try:
+                        torch.cuda.memory._dump_snapshot(memory_snapshot_path)
+                        print(
+                            f"内存快照已保存到 {memory_snapshot_path}，可拖入 https://pytorch.org/memory_viz 查看。"
+                        )
+                    except Exception as e:
+                        print(f"导出内存快照时出错：{e}；Chrome trace 仍可用。")
+                    finally:
+                        torch.cuda.memory._record_memory_history(enabled=None)
+            else:
+                prefill_time, decode_time, hit_rate = model.generate(
+                    [text], output_token=output_token, input_token=input_token
+                )
+            results.append((label, prefill_time, decode_time, hit_rate))
+            print(
+                f"prefill_time: {prefill_time}, decode_time: {decode_time}, hit_rate: {hit_rate}"
+            )
+            del model
+            if torch.cuda.is_available():
+                torch.cuda.empty_cache()
+        write_comparison_overlap(args.output_dir, results, output_token)
+        print(
+            f"\n汇总: prefill_time (不并行/并行) = {results[0][1]:.4f}/{results[1][1]:.4f}s, "
+            f"decode_time = {results[0][2]:.4f}/{results[1][2]:.4f}s, "
+            f"hit_rate = {results[0][3]:.4f}/{results[1][3]:.4f}"
+        )
+        sys.exit(0)
 
     if args.compare_cpu_offload:
         input_token, output_token = 16, 16

@@ -40,6 +40,11 @@ if __name__ == "__main__":
         action="store_true",
         help="专家放置随机化：不按 profile 热点顺序，随机选择哪些专家常驻 GPU（用于公平对比）。",
     )
+    parser.add_argument(
+        "--overlap",
+        action="store_true",
+        help="feat: GPU 与 CPU expert 计算并行（仅当 cpu_offload=1 时生效）。",
+    )
 
     args = parser.parse_args()
     model = FiddlerMixtral(args)

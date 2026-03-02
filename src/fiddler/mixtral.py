@@ -31,6 +31,7 @@ class FiddlerMixtral:
         self.past_key_value = transformers.cache_utils.DynamicCache.from_legacy_cache()
         self.past_key_values_length = 0
         self.cpu_offload = args.cpu_offload
+        self.overlap = getattr(args, "overlap", False)
         self.beam_width = args.beam_width
         self.n_layer = len(self.model.layers)
         self.n_expert = len(self.model.layers[0].block_sparse_moe.experts)
@@ -650,55 +651,121 @@ class FiddlerMixtral:
                         else:
                             gpu_experts.append(i_expert)
 
-                    for i_expert in gpu_experts:
-                        with record_function("yyj:token_dispatch"):
-                            top_2_list = top_2s[i_expert].tolist()
-                            idx_list = idxs[i_expert].tolist()
-                            current_state = inps[None, top_2_list].reshape(-1, hidden_dim)
-                        if self.is_expert_in_gpu(i_layer, i_expert):
-                            with record_function("yyj:gpu_forward"):
-                                current_state = experts[i_expert](
-                                    current_state, routing_weights[top_2_list, idx_list, None]
-                                )
-                        else:
-                            with record_function("yyj:offload_to_gpu"):
-                                self.expert_placeholder.load_state_dict(
-                                    experts[i_expert].state_dict()
-                                )
-                            with record_function("yyj:gpu_forward"):
-                                current_state = self.expert_placeholder(
-                                    current_state, routing_weights[top_2_list, idx_list, None]
-                                )
-                        with record_function("yyj:expert_accumulate"):
-                            inps_after_experts.index_add_(
-                                0,
-                                top_2s[i_expert].to(self.dev, non_blocking=True),
-                                current_state.to(self.dev, non_blocking=True),
-                            )
+                    if self.overlap and (gpu_experts and cpu_experts):
+                        # feat: GPU and CPU 计算并行 — 双缓冲，两线程分别写，最后相加
+                        inps_after_experts_gpu = torch.zeros_like(inps, device=self.dev)
+                        inps_after_experts_cpu = torch.zeros_like(inps, device=self.dev)
 
-                    for i_expert in cpu_experts:
-                        with record_function("yyj:token_dispatch"):
-                            top_2_list = top_2s[i_expert].tolist()
-                            idx_list = idxs[i_expert].tolist()
-                            current_state = inps[None, top_2_list].reshape(-1, hidden_dim)
-                        with record_function("yyj:offload_to_cpu"):
-                            current_state_cpu = current_state.to("cpu")
-                            routing_weights_cpu = routing_weights[top_2_list, idx_list, None].to("cpu")
-                        with record_function("yyj:cpu_forward"):
-                            current_state = self.run_expert_at_cpu(
-                                i_layer,
-                                i_expert,
-                                current_state_cpu,
-                                routing_weights_cpu,
-                            )
-                        with record_function("yyj:offload_to_gpu"):
-                            current_state = current_state.to(self.dev, non_blocking=True)
-                        with record_function("yyj:expert_accumulate"):
-                            inps_after_experts.index_add_(
-                                0,
-                                top_2s[i_expert].to(self.dev, non_blocking=True),
-                                current_state,
-                            )
+                        def run_gpu_experts():
+                            for i_expert in gpu_experts:
+                                with record_function("yyj:token_dispatch"):
+                                    top_2_list = top_2s[i_expert].tolist()
+                                    idx_list = idxs[i_expert].tolist()
+                                    current_state = inps[None, top_2_list].reshape(-1, hidden_dim)
+                                if self.is_expert_in_gpu(i_layer, i_expert):
+                                    with record_function("yyj:gpu_forward"):
+                                        current_state = experts[i_expert](
+                                            current_state, routing_weights[top_2_list, idx_list, None]
+                                        )
+                                else:
+                                    with record_function("yyj:offload_to_gpu"):
+                                        self.expert_placeholder.load_state_dict(
+                                            experts[i_expert].state_dict()
+                                        )
+                                    with record_function("yyj:gpu_forward"):
+                                        current_state = self.expert_placeholder(
+                                            current_state, routing_weights[top_2_list, idx_list, None]
+                                        )
+                                with record_function("yyj:expert_accumulate"):
+                                    inps_after_experts_gpu.index_add_(
+                                        0,
+                                        top_2s[i_expert].to(self.dev, non_blocking=True),
+                                        current_state.to(self.dev, non_blocking=True),
+                                    )
+
+                        def run_cpu_experts():
+                            for i_expert in cpu_experts:
+                                with record_function("yyj:token_dispatch"):
+                                    top_2_list = top_2s[i_expert].tolist()
+                                    idx_list = idxs[i_expert].tolist()
+                                    current_state = inps[None, top_2_list].reshape(-1, hidden_dim)
+                                with record_function("yyj:offload_to_cpu"):
+                                    current_state_cpu = current_state.to("cpu")
+                                    routing_weights_cpu = routing_weights[top_2_list, idx_list, None].to("cpu")
+                                with record_function("yyj:cpu_forward"):
+                                    current_state = self.run_expert_at_cpu(
+                                        i_layer,
+                                        i_expert,
+                                        current_state_cpu,
+                                        routing_weights_cpu,
+                                    )
+                                with record_function("yyj:offload_to_gpu"):
+                                    current_state = current_state.to(self.dev, non_blocking=True)
+                                with record_function("yyj:expert_accumulate"):
+                                    inps_after_experts_cpu.index_add_(
+                                        0,
+                                        top_2s[i_expert].to(self.dev, non_blocking=True),
+                                        current_state,
+                                    )
+
+                        t_gpu = threading.Thread(target=run_gpu_experts)
+                        t_cpu = threading.Thread(target=run_cpu_experts)
+                        t_gpu.start()
+                        t_cpu.start()
+                        t_gpu.join()
+                        t_cpu.join()
+                        inps_after_experts = inps_after_experts_gpu + inps_after_experts_cpu
+                    else:
+                        # 串行：先 GPU experts，再 CPU experts
+                        for i_expert in gpu_experts:
+                            with record_function("yyj:token_dispatch"):
+                                top_2_list = top_2s[i_expert].tolist()
+                                idx_list = idxs[i_expert].tolist()
+                                current_state = inps[None, top_2_list].reshape(-1, hidden_dim)
+                            if self.is_expert_in_gpu(i_layer, i_expert):
+                                with record_function("yyj:gpu_forward"):
+                                    current_state = experts[i_expert](
+                                        current_state, routing_weights[top_2_list, idx_list, None]
+                                    )
+                            else:
+                                with record_function("yyj:offload_to_gpu"):
+                                    self.expert_placeholder.load_state_dict(
+                                        experts[i_expert].state_dict()
+                                    )
+                                with record_function("yyj:gpu_forward"):
+                                    current_state = self.expert_placeholder(
+                                        current_state, routing_weights[top_2_list, idx_list, None]
+                                    )
+                            with record_function("yyj:expert_accumulate"):
+                                inps_after_experts.index_add_(
+                                    0,
+                                    top_2s[i_expert].to(self.dev, non_blocking=True),
+                                    current_state.to(self.dev, non_blocking=True),
+                                )
+
+                        for i_expert in cpu_experts:
+                            with record_function("yyj:token_dispatch"):
+                                top_2_list = top_2s[i_expert].tolist()
+                                idx_list = idxs[i_expert].tolist()
+                                current_state = inps[None, top_2_list].reshape(-1, hidden_dim)
+                            with record_function("yyj:offload_to_cpu"):
+                                current_state_cpu = current_state.to("cpu")
+                                routing_weights_cpu = routing_weights[top_2_list, idx_list, None].to("cpu")
+                            with record_function("yyj:cpu_forward"):
+                                current_state = self.run_expert_at_cpu(
+                                    i_layer,
+                                    i_expert,
+                                    current_state_cpu,
+                                    routing_weights_cpu,
+                                )
+                            with record_function("yyj:offload_to_gpu"):
+                                current_state = current_state.to(self.dev, non_blocking=True)
+                            with record_function("yyj:expert_accumulate"):
+                                inps_after_experts.index_add_(
+                                    0,
+                                    top_2s[i_expert].to(self.dev, non_blocking=True),
+                                    current_state,
+                                )
 
             # addition because there's residual connection over moe layer
             with record_function(f"yyj:layer_{i_layer}_ffn_residual"):
