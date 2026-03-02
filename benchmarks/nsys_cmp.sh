@@ -11,9 +11,9 @@ echo "kernel.perf_event_paranoid = -1" | sudo tee /etc/sysctl.d/nsys-perf.conf
 
 mkdir -p /home/yyj/fiddler/benchmarks/nsys_overlap_reports
 
-
 cd /home/yyj/fiddler/benchmarks
-nsys profile \
+
+sudo /usr/local/cuda/bin/nsys profile \
   --output="/home/yyj/fiddler/benchmarks/nsys_overlap_reports/nsys_compare_overlap" \
   --trace=cuda,nvtx\
   --sample=cpu \
