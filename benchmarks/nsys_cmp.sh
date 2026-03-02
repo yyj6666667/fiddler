@@ -22,6 +22,6 @@ sudo /usr/local/cuda/bin/nsys profile \
   --cuda-memory-usage=true \
   --force-overwrite=true \
   --stats=true \
-  python latency.py --compare-overlap --output-dir "/home/yyj/fiddler/benchmarks/nsys_overlap_reports"
+  /opt/conda/bin/python latency.py --compare-overlap --output-dir "/home/yyj/fiddler/benchmarks/nsys_overlap_reports"
 
 echo "完成: /home/yyj/fiddler/benchmarks/nsys_overlap_reports/nsys_compare_overlap.nsys-rep 与 overlap_performance_comparison.md"
