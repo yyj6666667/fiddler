@@ -40,6 +40,18 @@ class FiddlerMixtral:
         self._cpu_copy_stream = (
             torch.cuda.Stream() if torch.cuda.is_available() else None
         )
+        if self.overlap:
+            self._worker_ctx = {}
+            self._worker_stop = False
+            self._gpu_done = [False]
+            self._cpu_done = [False]
+            self._gpu_start_event = threading.Event()
+            self._cpu_start_event = threading.Event()
+            self._gpu_thread = threading.Thread(target=self._gpu_worker_loop, daemon=True)
+            self._cpu_thread = threading.Thread(target=self._cpu_worker_loop, daemon=True)
+            self._gpu_thread.start()
+            self._cpu_thread.start()
+
         self.n_layer = len(self.model.layers)
         self.n_expert = len(self.model.layers[0].block_sparse_moe.experts)
 
@@ -76,6 +88,95 @@ class FiddlerMixtral:
         self._register_attn_profiler_hooks()
 
         print("Model is ready.")
+
+    def _gpu_worker_loop(self):
+        while not self._worker_stop:
+            if not self._gpu_start_event.wait(timeout=0.1): continue
+            self._gpu_start_event.clear()
+            if self._worker_stop: break
+
+            ctx = self._worker_ctx
+            gpu_experts = ctx["gpu_experts"]
+            inps = ctx["inps"]
+            top_2s = ctx["top_2s"]
+            idxs = ctx["idxs"]
+            hidden_dim = ctx["hidden_dim"]
+            i_layer = ctx["i_layer"]
+            experts = ctx["experts"]
+            routing_weights = ctx["routing_weights"]
+            inps_after_experts_gpu = ctx["inps_after_experts_gpu"]
+
+            for i_expert in gpu_experts:
+                with record_function("yyj:token_dispatch"):
+                    top_2_list = top_2s[i_expert].tolist()
+                    idx_list = idxs[i_expert].tolist()
+                    current_state = inps[None, top_2_list].reshape(-1, hidden_dim)
+                if self.is_expert_in_gpu(i_layer, i_expert):
+                    with record_function("yyj:gpu_forward"):
+                        current_state = experts[i_expert](
+                            current_state, routing_weights[top_2_list, idx_list, None]
+                        )
+                else:
+                    with record_function("yyj:offload_to_gpu"):
+                        self.expert_placeholder.load_state_dict(
+                            experts[i_expert].state_dict()
+                        )
+                    with record_function("yyj:gpu_forward"):
+                        current_state = self.expert_placeholder(
+                            current_state, routing_weights[top_2_list, idx_list, None]
+                        )
+                with record_function("yyj:expert_accumulate"):
+                    inps_after_experts_gpu.index_add_(
+                        0,
+                        top_2s[i_expert].to(self.dev, non_blocking=True),
+                        current_state.to(self.dev, non_blocking=True),
+                    )
+            self._gpu_done[0] = True
+
+    def _cpu_worker_loop(self):
+        while not self._worker_stop:
+            if not self._cpu_start_event.wait(timeout=0.1): continue
+            self._cpu_start_event.clear()
+            if self._worker_stop: break
+
+            ctx = self._worker_ctx
+            cpu_experts = ctx["cpu_experts"]
+            inps = ctx["inps"]
+            top_2s = ctx["top_2s"]
+            idxs = ctx["idxs"]
+            hidden_dim = ctx["hidden_dim"]
+            i_layer = ctx["i_layer"]
+            routing_weights = ctx["routing_weights"]
+            inps_after_experts_cpu = ctx["inps_after_experts_cpu"]
+            stream = self._cpu_copy_stream
+
+            with torch.cuda.stream(stream) if stream is not None else contextlib.nullcontext():
+                for i_expert in cpu_experts:
+                    with record_function("yyj:token_dispatch"):
+                        top_2_list = top_2s[i_expert].tolist()
+                        idx_list = idxs[i_expert].tolist()
+                        current_state = inps[None, top_2_list].reshape(-1, hidden_dim)
+                    with record_function("yyj:offload_to_cpu"):
+                        current_state_cpu = current_state.to("cpu", non_blocking=True)
+                        routing_weights_cpu = routing_weights[top_2_list, idx_list, None].to("cpu", non_blocking=True)
+                    if stream is not None:
+                        stream.synchronize()
+                    with record_function("yyj:cpu_forward"):
+                        current_state = self.run_expert_at_cpu(
+                            i_layer,
+                            i_expert,
+                            current_state_cpu,
+                            routing_weights_cpu,
+                        )
+                    with record_function("yyj:offload_to_gpu"):
+                        current_state = current_state.to(self.dev, non_blocking=True)
+                    with record_function("yyj:expert_accumulate"):
+                        inps_after_experts_cpu.index_add_(
+                            0,
+                            top_2s[i_expert].to(self.dev, non_blocking=True),
+                            current_state,
+                        )
+            self._cpu_done[0] = True
 
     def _register_attn_profiler_hooks(self):
         """为每层 self_attn 的 q/k/v/o 投影注册 record，便于 trace 里区分 CPU/GPU 在做什么。"""
@@ -646,8 +747,7 @@ class FiddlerMixtral:
                             else:
                                 gpu_total += cost_per_expert[i_expert, 1]
                         cost = (
-                            #max(cpu_total, gpu_total) if self.overlap else (cpu_total + gpu_total)
-                            cpu_total + gpu_total
+                            max(cpu_total, gpu_total) if self.overlap else (cpu_total + gpu_total)
                         )
                         if cost < best_cost:
                             best_cost = cost
@@ -673,74 +773,29 @@ class FiddlerMixtral:
                         if self._cpu_copy_stream is not None:
                             torch.cuda.current_stream().synchronize()
 
-                        def run_gpu_experts():
-                            for i_expert in gpu_experts:
-                                with record_function("yyj:token_dispatch"):
-                                    top_2_list = top_2s[i_expert].tolist()
-                                    idx_list = idxs[i_expert].tolist()
-                                    current_state = inps[None, top_2_list].reshape(-1, hidden_dim)
-                                if self.is_expert_in_gpu(i_layer, i_expert):
-                                    with record_function("yyj:gpu_forward"):
-                                        current_state = experts[i_expert](
-                                            current_state, routing_weights[top_2_list, idx_list, None]
-                                        )
-                                else:
-                                    with record_function("yyj:offload_to_gpu"):
-                                        self.expert_placeholder.load_state_dict(
-                                            experts[i_expert].state_dict()
-                                        )
-                                    with record_function("yyj:gpu_forward"):
-                                        current_state = self.expert_placeholder(
-                                            current_state, routing_weights[top_2_list, idx_list, None]
-                                        )
-                                with record_function("yyj:expert_accumulate"):
-                                    inps_after_experts_gpu.index_add_(
-                                        0,
-                                        top_2s[i_expert].to(self.dev, non_blocking=True),
-                                        current_state.to(self.dev, non_blocking=True),
-                                    )
+                        # 使用长运行的工作线程避免线程创建开销，并用忙等最小化延迟。
+                        self._gpu_done[0] = False
+                        self._cpu_done[0] = False
+                        self._worker_ctx = {
+                            "gpu_experts": gpu_experts,
+                            "cpu_experts": cpu_experts,
+                            "inps": inps,
+                            "top_2s": top_2s,
+                            "idxs": idxs,
+                            "hidden_dim": hidden_dim,
+                            "i_layer": i_layer,
+                            "experts": experts,
+                            "routing_weights": routing_weights,
+                            "inps_after_experts_gpu": inps_after_experts_gpu,
+                            "inps_after_experts_cpu": inps_after_experts_cpu,
+                        }
+                        self._gpu_start_event.set()
+                        self._cpu_start_event.set()
 
-                        def run_cpu_experts():
-                            # 在专用 stream 上执行 GPU->CPU 拷贝，避免 .to("cpu") 阻塞默认 stream，
-                            # 从而让 GPU 线程的专家计算与本线程的拷贝/CPU 计算真正重叠。
-                            stream = self._cpu_copy_stream
-                            with torch.cuda.stream(stream) if stream is not None else contextlib.nullcontext():
-                                for i_expert in cpu_experts:
-                                    with record_function("yyj:token_dispatch"):
-                                        top_2_list = top_2s[i_expert].tolist()
-                                        idx_list = idxs[i_expert].tolist()
-                                        current_state = inps[None, top_2_list].reshape(-1, hidden_dim)
-                                    # 使用 non_blocking=True 在拷贝未完成时即返回；若在独立 stream 上，
-                                    # 不会触发默认 stream 的同步，GPU 线程可继续执行。
-                                    with record_function("yyj:offload_to_cpu"):
-                                        current_state_cpu = current_state.to("cpu", non_blocking=True)
-                                        routing_weights_cpu = routing_weights[top_2_list, idx_list, None].to("cpu", non_blocking=True)
-                                    # 仅同步本 stream，确保 GPU->CPU 拷贝完成后再在 CPU 上算，保证输入正确；
-                                    # 不阻塞默认 stream，GPU 线程的 kernel 可同时执行。
-                                    if stream is not None:
-                                        stream.synchronize()
-                                    with record_function("yyj:cpu_forward"):
-                                        current_state = self.run_expert_at_cpu(
-                                            i_layer,
-                                            i_expert,
-                                            current_state_cpu,
-                                            routing_weights_cpu,
-                                        )
-                                    with record_function("yyj:offload_to_gpu"):
-                                        current_state = current_state.to(self.dev, non_blocking=True)
-                                    with record_function("yyj:expert_accumulate"):
-                                        inps_after_experts_cpu.index_add_(
-                                            0,
-                                            top_2s[i_expert].to(self.dev, non_blocking=True),
-                                            current_state,
-                                        )
+                        # 忙等：主线程在 CPU 上高速循环查询，避免休眠唤醒延迟。
+                        while not (self._gpu_done[0] and self._cpu_done[0]):
+                            pass
 
-                        t_gpu = threading.Thread(target=run_gpu_experts)
-                        t_cpu = threading.Thread(target=run_cpu_experts)
-                        t_gpu.start()
-                        t_cpu.start()
-                        t_gpu.join()
-                        t_cpu.join()
                         # CPU 线程在独立 stream 上写入了 inps_after_experts_cpu，合并前需同步该 stream，
                         # 确保所有 GPU 写回已完成，再与 inps_after_experts_gpu 相加，保证结果正确。
                         if self._cpu_copy_stream is not None:

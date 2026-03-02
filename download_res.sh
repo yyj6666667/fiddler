@@ -18,6 +18,10 @@ gcloud storage cp /home/yyj/fiddler/benchmarks/vs_output/fiddler_profiler_trace_
 gcloud storage cp /home/yyj/fiddler/benchmarks/nsys_overlap_reports/nsys_compare_overlap.nsys-rep gs://856356105879-us-central1-blueprint-config/
 gcloud storage cp /home/yyj/fiddler/benchmarks/nsys_overlap_reports/nsys_compare_overlap.sqlite gs://856356105879-us-central1-blueprint-config/
 
+gcloud storage cp /home/yyj/fiddler/benchmarks/nsys_overlap_reports/nsys_no_overlap.nsys-rep gs://856356105879-us-central1-blueprint-config/
+gcloud storage cp /home/yyj/fiddler/benchmarks/nsys_overlap_reports/nsys_overlap.nsys-rep gs://856356105879-us-central1-blueprint-config/
+
+
 
 ####
 # nsys overlap 时间线（nsys_compare_overlap.sh 默认输出目录）
@@ -40,6 +44,9 @@ gcloud storage cp gs://856356105879-us-central1-blueprint-config/fiddler_profile
 # nsys overlap 时间线
 gcloud storage cp gs://856356105879-us-central1-blueprint-config/nsys_compare_overlap.nsys-rep ./
 gcloud storage cp gs://856356105879-us-central1-blueprint-config/nsys_compare_overlap.sqlite ./
+
+gcloud storage cp gs://856356105879-us-central1-blueprint-config/nsys_no_overlap.nsys-rep ./
+gcloud storage cp gs://856356105879-us-central1-blueprint-config/nsys_overlap.nsys-rep ./
 
 ####
 # with stack
