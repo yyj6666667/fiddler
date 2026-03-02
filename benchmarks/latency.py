@@ -110,6 +110,14 @@ if __name__ == "__main__":
         help="仅对比 cpu_offload=1 下 不并行 vs 并行：依次跑 overlap=0 与 overlap=1，将关键性能写入 output-dir/overlap_performance_comparison.md。可与 --profile 同时使用。",
     )
     parser.add_argument(
+        "--nsys-overlap-run",
+        type=int,
+        default=None,
+        choices=[0, 1],
+        metavar="0|1",
+        help="与 --compare-overlap 同用：只跑 overlap=0 或 1 一段，并包一层 cudaProfilerStart/Stop，供 nsys 分别生成两段 .nsys-rep。不设则跑两段并写对比 .md。",
+    )
+    parser.add_argument(
         "--output-dir",
         type=str,
         default=".",
@@ -143,14 +151,19 @@ if __name__ == "__main__":
         text = texts[idx_text]
         results = []
         args.cpu_offload = 1
-        # CUDA Profiler API：供 nsys -c cudaProfilerApi 精确采集此段
-        if torch.cuda.is_available():
-            torch.cuda.cudart().cudaProfilerStart()
-            print("[cudaProfilerApi] 采集范围已开启，nsys 将采集此段时间线。")
-        else:
-            print("[cudaProfilerApi] 未检测到 CUDA，未触发，nsys 可能不会生成 .nsys-rep。")
-        try:
-            for use_overlap in [False, True]:
+        # 仅跑一段时（--nsys-overlap-run=0|1）：该段外包 cudaProfilerStart/Stop，供 nsys 分别生成两段 .nsys-rep
+        runs_to_do = (
+            [args.nsys_overlap_run == 0, args.nsys_overlap_run == 1]
+            if args.nsys_overlap_run is not None
+            else [False, True]
+        )
+        for use_overlap in runs_to_do:
+            if args.nsys_overlap_run is not None and torch.cuda.is_available():
+                torch.cuda.cudart().cudaProfilerStart()
+                print(
+                    f"[cudaProfilerApi] 采集范围已开启 (overlap={int(use_overlap)})，nsys 将采集此段时间线。"
+                )
+            try:
                 args.overlap = use_overlap
                 label = "并行" if use_overlap else "不并行"
                 print(f"\n=== cpu_offload=1, overlap={int(use_overlap)} ({label}) ===")
@@ -187,16 +200,17 @@ if __name__ == "__main__":
                 del model
                 if torch.cuda.is_available():
                     torch.cuda.empty_cache()
-        finally:
-            if torch.cuda.is_available():
-                torch.cuda.cudart().cudaProfilerStop()
-                print("[cudaProfilerApi] 采集范围已结束。")
-        write_comparison_overlap(args.output_dir, results, output_token)
-        print(
-            f"\n汇总: prefill_time (不并行/并行) = {results[0][1]:.4f}/{results[1][1]:.4f}s, "
-            f"decode_time = {results[0][2]:.4f}/{results[1][2]:.4f}s, "
-            f"hit_rate = {results[0][3]:.4f}/{results[1][3]:.4f}"
-        )
+            finally:
+                if args.nsys_overlap_run is not None and torch.cuda.is_available():
+                    torch.cuda.cudart().cudaProfilerStop()
+                    print("[cudaProfilerApi] 采集范围已结束。")
+        if len(results) == 2:
+            write_comparison_overlap(args.output_dir, results, output_token)
+            print(
+                f"\n汇总: prefill_time (不并行/并行) = {results[0][1]:.4f}/{results[1][1]:.4f}s, "
+                f"decode_time = {results[0][2]:.4f}/{results[1][2]:.4f}s, "
+                f"hit_rate = {results[0][3]:.4f}/{results[1][3]:.4f}"
+            )
         sys.exit(0)
 
     if args.compare_cpu_offload:
