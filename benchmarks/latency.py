@@ -123,6 +123,18 @@ if __name__ == "__main__":
         default=".",
         help="目录：profiler trace 与 latency.txt 的写入路径，默认当前目录。",
     )
+    parser.add_argument(
+        "--input-token",
+        type=int,
+        default=16,
+        help="Number of input tokens.",
+    )
+    parser.add_argument(
+        "--output-token",
+        type=int,
+        default=16,
+        help="Number of output tokens.",
+    )
 
     args = parser.parse_args()
     os.makedirs(args.output_dir, exist_ok=True)
@@ -142,7 +154,7 @@ if __name__ == "__main__":
     random.shuffle(texts)
 
     if args.compare_overlap:
-        input_token, output_token = 16, 16
+        input_token, output_token = args.input_token, args.output_token
         idx_text = 0
         while idx_text < len(texts) and len(texts[idx_text].split()) < input_token:
             idx_text += 1
@@ -272,8 +284,8 @@ if __name__ == "__main__":
 
     did_profile = False
 
-    for input_token in [16]:
-        for output_token in [16]:
+    for input_token in [args.input_token]:
+        for output_token in [args.output_token]:
             idx_text = 0
             prefill_time_sum, decode_time_sum, hit_rate_sum = 0, 0, 0
             for _ in range(n_sample):
@@ -313,6 +325,9 @@ if __name__ == "__main__":
                 else:
                     prefill_time, decode_time, hit_rate = model.generate(
                         [text], output_token=output_token, input_token=input_token
+                    )
+                    print(
+                        f"prefill_time: {prefill_time}, decode_time: {decode_time}, hit_rate: {hit_rate}"
                     )
 
                 prefill_time_sum += prefill_time
