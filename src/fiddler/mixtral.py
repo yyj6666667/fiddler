@@ -43,13 +43,9 @@ class FiddlerMixtral:
         if self.overlap:
             self._worker_ctx = {}
             self._worker_stop = False
-            self._gpu_done = [False]
-            self._cpu_done = [False]
-            self._gpu_start_event = threading.Event()
             self._cpu_start_event = threading.Event()
-            self._gpu_thread = threading.Thread(target=self._gpu_worker_loop, daemon=True)
+            self._cpu_done_event = threading.Event()
             self._cpu_thread = threading.Thread(target=self._cpu_worker_loop, daemon=True)
-            self._gpu_thread.start()
             self._cpu_thread.start()
 
         self.n_layer = len(self.model.layers)
@@ -88,52 +84,6 @@ class FiddlerMixtral:
         self._register_attn_profiler_hooks()
 
         print("Model is ready.")
-
-    def _gpu_worker_loop(self):
-        threading.current_thread().name = "fiddler_gpu_worker"
-        while not self._worker_stop:
-            if not self._gpu_start_event.wait(timeout=0.1): continue
-            self._gpu_start_event.clear()
-            if self._worker_stop: break
-
-            ctx = self._worker_ctx
-            i_layer = ctx["i_layer"]
-            gpu_experts = ctx["gpu_experts"]
-            inps = ctx["inps"]
-            top_2s = ctx["top_2s"]
-            idxs = ctx["idxs"]
-            hidden_dim = ctx["hidden_dim"]
-            experts = ctx["experts"]
-            routing_weights = ctx["routing_weights"]
-            inps_after_experts_gpu = ctx["inps_after_experts_gpu"]
-
-            with record_function(f"yyj:overlap_gpu_worker_layer_{i_layer}"):
-                for i_expert in gpu_experts:
-                    with record_function("yyj:token_dispatch"):
-                        top_2_list = top_2s[i_expert].tolist()
-                        idx_list = idxs[i_expert].tolist()
-                        current_state = inps[None, top_2_list].reshape(-1, hidden_dim)
-                    if self.is_expert_in_gpu(i_layer, i_expert):
-                        with record_function("yyj:gpu_forward"):
-                            current_state = experts[i_expert](
-                                current_state, routing_weights[top_2_list, idx_list, None]
-                            )
-                    else:
-                        with record_function("yyj:offload_to_gpu"):
-                            self.expert_placeholder.load_state_dict(
-                                experts[i_expert].state_dict()
-                            )
-                        with record_function("yyj:gpu_forward"):
-                            current_state = self.expert_placeholder(
-                                current_state, routing_weights[top_2_list, idx_list, None]
-                            )
-                    with record_function("yyj:expert_accumulate"):
-                        inps_after_experts_gpu.index_add_(
-                            0,
-                            top_2s[i_expert].to(self.dev, non_blocking=True),
-                            current_state.to(self.dev, non_blocking=True),
-                        )
-            self._gpu_done[0] = True
 
     def _cpu_worker_loop(self):
         threading.current_thread().name = "fiddler_cpu_worker"
@@ -180,7 +130,7 @@ class FiddlerMixtral:
                                 top_2s[i_expert].to(self.dev, non_blocking=True),
                                 current_state,
                             )
-            self._cpu_done[0] = True
+            self._cpu_done_event.set()
 
     def _register_attn_profiler_hooks(self):
         """为每层 self_attn 的 q/k/v/o 投影注册 record，便于 trace 里区分 CPU/GPU 在做什么。"""
@@ -768,20 +718,17 @@ class FiddlerMixtral:
                             gpu_experts.append(i_expert)
 
                     if self.overlap and (gpu_experts and cpu_experts):
-                        # feat: GPU and CPU 计算并行 — 双缓冲，两线程分别写，最后相加
+                        # feat: GPU 和 CPU 计算并行 — 主线程派发 GPU experts，CPU 线程独立处理 CPU experts，最后相加
                         with record_function(f"yyj:overlap_layer_{i_layer}_parallel"):
                             inps_after_experts_gpu = torch.zeros_like(inps, device=self.dev)
                             inps_after_experts_cpu = torch.zeros_like(inps, device=self.dev)
 
-                            # 在启动双线程前，先同步默认 CUDA stream，保证本层已产生的 inps、routing_weights
-                            # 等数据在 GPU 上全部就绪，CPU 线程随后在独立 stream 上拷贝时读到的是正确数据。
-                            with record_function("yyj:overlap_sync_before_workers"):
+                            # 复制流等待默认流，GPU 内部隐式保证数据就绪，不阻塞主线程
+                            with record_function("yyj:overlap_wait_stream"):
                                 if self._cpu_copy_stream is not None:
-                                    torch.cuda.current_stream().synchronize()
+                                    self._cpu_copy_stream.wait_stream(torch.cuda.current_stream())
 
-                            # 使用长运行的工作线程避免线程创建开销，并用忙等最小化延迟。
-                            self._gpu_done[0] = False
-                            self._cpu_done[0] = False
+                            self._cpu_done_event.clear()
                             with record_function("yyj:overlap_dispatch"):
                                 self._worker_ctx = {
                                     "gpu_experts": gpu_experts,
@@ -796,16 +743,40 @@ class FiddlerMixtral:
                                     "inps_after_experts_gpu": inps_after_experts_gpu,
                                     "inps_after_experts_cpu": inps_after_experts_cpu,
                                 }
-                                self._gpu_start_event.set()
                                 self._cpu_start_event.set()
 
-                            # 忙等：主线程在 CPU 上高速循环查询，避免休眠唤醒延迟。
-                            with record_function("yyj:overlap_main_wait"):
-                                while not (self._gpu_done[0] and self._cpu_done[0]):
-                                    time.sleep(0)
+                            # 主线程在默认 stream 上异步派发 GPU experts（无单独 GPU 线程，避免 GIL 竞争）
+                            with record_function(f"yyj:overlap_gpu_main_layer_{i_layer}"):
+                                for i_expert in gpu_experts:
+                                    with record_function("yyj:token_dispatch"):
+                                        top_2_list = top_2s[i_expert].tolist()
+                                        idx_list = idxs[i_expert].tolist()
+                                        current_state = inps[None, top_2_list].reshape(-1, hidden_dim)
+                                    if self.is_expert_in_gpu(i_layer, i_expert):
+                                        with record_function("yyj:gpu_forward"):
+                                            current_state = experts[i_expert](
+                                                current_state, routing_weights[top_2_list, idx_list, None]
+                                            )
+                                    else:
+                                        with record_function("yyj:offload_to_gpu"):
+                                            self.expert_placeholder.load_state_dict(
+                                                experts[i_expert].state_dict()
+                                            )
+                                        with record_function("yyj:gpu_forward"):
+                                            current_state = self.expert_placeholder(
+                                                current_state, routing_weights[top_2_list, idx_list, None]
+                                            )
+                                    with record_function("yyj:expert_accumulate"):
+                                        inps_after_experts_gpu.index_add_(
+                                            0,
+                                            top_2s[i_expert].to(self.dev, non_blocking=True),
+                                            current_state.to(self.dev, non_blocking=True),
+                                        )
 
-                            # CPU 线程在独立 stream 上写入了 inps_after_experts_cpu，合并前需同步该 stream，
-                            # 确保所有 GPU 写回已完成，再与 inps_after_experts_gpu 相加，保证结果正确。
+                            with record_function("yyj:overlap_main_wait"):
+                                self._cpu_done_event.wait()
+
+                            # CPU 线程在独立 stream 上写入了 inps_after_experts_cpu，合并前需同步该 stream
                             with record_function("yyj:overlap_sync_cpu_stream"):
                                 if self._cpu_copy_stream is not None:
                                     self._cpu_copy_stream.synchronize()
