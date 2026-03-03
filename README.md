@@ -1,3 +1,6 @@
+* ~10% 性能提升， 开心
+![yyj_improve_loop benchmark plot](./improve/improve_loop.png)
+
 # 🎻 Fiddler: CPU-GPU Orchestration for Fast Local Inference of MoE Models [[paper]](https://arxiv.org/abs/2402.07033)
 
 (This repository is a proof-of-concept and still under heavy construction)
@@ -21,15 +24,15 @@ The key idea behind Fiddler is to use the CPU’s computation power.
 ![](./asset/key-idea.png)
 
 Existing offloading systems (e.g., [Eliseev & Mazur, 2023](https://github.com/dvmazur/mixtral-offloading)) primarily utilize the memory resources available on the CPU, while the computation mainly occurs on the GPU. The typical process involves: ① When some expert weights are missing from the GPU memory, ② they are copied from the CPU memory to the GPU memory, then ③ GPU executes the expert layer.
-Although GPU execution is faster, the data movement introduces significant overhead. 
+Although GPU execution is faster, the data movement introduces significant overhead.
 
-On the other hand, **Fiddler uses CPU computation resources in addition to memory resources**. The process is as follows: ① when some expert weights are missing on the GPU memory, ② we copy the activation values from the GPU memory to the CPU memory, instead of copying the weights. 
+On the other hand, **Fiddler uses CPU computation resources in addition to memory resources**. The process is as follows: ① when some expert weights are missing on the GPU memory, ② we copy the activation values from the GPU memory to the CPU memory, instead of copying the weights.
 ③ The computation of the expert layer then happens on the CPU, and ④ the output activation after the expert is copied back to the GPU.
 
-This approach significantly reduces the latency of CPU-GPU communication, especially since the size of activations is considerably smaller than the weight size (`batch_size x 4096` versus `3 x 4096 x 14336` per expert for the Mixtral-8x7B) for a small batch size. Despite slower computation speeds on the CPU compared to the GPU, avoiding the weight copying process makes this approach more efficient. 
+This approach significantly reduces the latency of CPU-GPU communication, especially since the size of activations is considerably smaller than the weight size (`batch_size x 4096` versus `3 x 4096 x 14336` per expert for the Mixtral-8x7B) for a small batch size. Despite slower computation speeds on the CPU compared to the GPU, avoiding the weight copying process makes this approach more efficient.
 
 ### Motivation
-Why Fiddler is important? Because: 
+Why Fiddler is important? Because:
 - MoE models are showing promising performance. For instance, Mixtral-8x7B is the best open-source model at [LMSys Chatbot Arena](https://huggingface.co/spaces/lmsys/chatbot-arena-leaderboard) at the moment (2024/02)
 - MoE models are sparse, meaning there are fewer computations per parameter. As a result, investing in more GPUs is less cost-effective (they have high computation power but small memory), especially for local inference purposes.
 - MoE models can grow infinitely large, making it even more challenging to get enough GPUs. For instance, [Switch Transformer](https://arxiv.org/abs/2101.03961) has 2,048 experts per layer and >1T parameter in total.
@@ -59,10 +62,10 @@ We are working on supporting the following features.
 Fiddler is currently relying on PyTorch implementation for expert processing at the CPU, and it is slow if your CPU does not support AVX512.
 
 ## Citation
-If you use Fiddler in your research, please cite the following paper. 
+If you use Fiddler in your research, please cite the following paper.
 ```
 @misc{kamahori2024fiddler,
-      title={Fiddler: CPU-GPU Orchestration for Fast Inference of Mixture-of-Experts Models}, 
+      title={Fiddler: CPU-GPU Orchestration for Fast Inference of Mixture-of-Experts Models},
       author={Keisuke Kamahori and Yile Gu and Kan Zhu and Baris Kasikci},
       year={2024},
       eprint={2402.07033},
