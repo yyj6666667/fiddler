@@ -33,6 +33,7 @@ class FiddlerMixtral:
         self.past_key_values_length = 0
         self.cpu_offload = getattr(args, "cpu_offload", 1)
         self.overlap = getattr(args, "overlap", False)
+        self.yyj_improve_loop = getattr(args, "yyj_improve_loop", True)
         self.beam_width = args.beam_width
         # 专用 CUDA stream：overlap 时供 CPU 线程做 GPU->CPU 拷贝用。
         # 在默认 stream 上 .to("cpu") 会隐式同步整个 GPU，导致与 GPU 专家计算无法重叠；
@@ -786,8 +787,9 @@ class FiddlerMixtral:
                         ##############
                         ### vital: only keep experts who has token to handle
                         ##############
-                        gpu_experts = [i for i in gpu_experts if top_2s[i].shape[0] > 0]
-                        cpu_experts = [i for i in cpu_experts if top_2s[i].shape[0] > 0]
+                        if self.yyj_improve_loop:
+                            gpu_experts = [i for i in gpu_experts if top_2s[i].shape[0] > 0]
+                            cpu_experts = [i for i in cpu_experts if top_2s[i].shape[0] > 0]
 
                         for i_expert in gpu_experts:
                             with record_function("token_dispatch_for_gpu"):
