@@ -31,7 +31,7 @@ class FiddlerMixtral:
         self.tokenizer.pad_token = self.tokenizer.eos_token
         self.past_key_value = transformers.cache_utils.DynamicCache.from_legacy_cache()
         self.past_key_values_length = 0
-        self.cpu_offload = args.cpu_offload
+        self.cpu_offload = getattr(args, "cpu_offload", 1)
         self.overlap = getattr(args, "overlap", False)
         self.beam_width = args.beam_width
         # 专用 CUDA stream：overlap 时供 CPU 线程做 GPU->CPU 拷贝用。
@@ -783,6 +783,11 @@ class FiddlerMixtral:
                             with record_function("yyj:overlap_merge"):
                                 inps_after_experts = inps_after_experts_gpu + inps_after_experts_cpu
                     else:
+                        ##############
+                        ### only keep experts who has token to handle
+                        ##############
+                        gpu_experts = [i for i in gpu_experts if top_2s[i].shape[0] > 0]
+                        cpu_experts = [i for i in cpu_experts if top_2s[i].shape[0] > 0]
                         # 串行：先 GPU experts，再 CPU experts
                         for i_expert in gpu_experts:
                             with record_function("yyj:token_dispatch"):

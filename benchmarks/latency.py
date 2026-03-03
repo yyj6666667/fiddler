@@ -190,7 +190,7 @@ if __name__ == "__main__":
                     with profile(
                         activities=activities,
                         profile_memory=True,
-                        with_stack=True,
+                        with_stack=False,
                     ) as prof:
                         with record_function("fiddler_generate"):
                             prefill_time, decode_time, hit_rate = model.generate(
@@ -248,7 +248,7 @@ if __name__ == "__main__":
                 with profile(
                     activities=activities,
                     profile_memory=True,
-                    with_stack=True,
+                    with_stack=False,
                 ) as prof:
                     with record_function("fiddler_generate"):
                         prefill_time, decode_time, hit_rate = model.generate(
@@ -305,7 +305,7 @@ if __name__ == "__main__":
                     with profile(
                         activities=activities,
                         profile_memory=True,
-                        with_stack=True,
+                        with_stack=False,
                     ) as prof:
                         with record_function("fiddler_generate"):
                             prefill_time, decode_time, hit_rate = model.generate(
