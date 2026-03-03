@@ -90,6 +90,7 @@ class FiddlerMixtral:
         print("Model is ready.")
 
     def _gpu_worker_loop(self):
+        threading.current_thread().name = "fiddler_gpu_worker"
         while not self._worker_stop:
             if not self._gpu_start_event.wait(timeout=0.1): continue
             self._gpu_start_event.clear()
@@ -135,6 +136,7 @@ class FiddlerMixtral:
             self._gpu_done[0] = True
 
     def _cpu_worker_loop(self):
+        threading.current_thread().name = "fiddler_cpu_worker"
         while not self._worker_stop:
             if not self._cpu_start_event.wait(timeout=0.1): continue
             self._cpu_start_event.clear()
