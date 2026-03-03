@@ -20,7 +20,7 @@ gcloud storage cp /home/yyj/fiddler/benchmarks/nsys_overlap_reports/nsys_compare
 
 gcloud storage cp /home/yyj/fiddler/benchmarks/nsys_overlap_reports/nsys_no_overlap.nsys-rep gs://856356105879-us-central1-blueprint-config/
 gcloud storage cp /home/yyj/fiddler/benchmarks/nsys_overlap_reports/nsys_overlap.nsys-rep gs://856356105879-us-central1-blueprint-config/
-
+gcloud storage cp /home/yyj/fiddler/benchmarks/nsys_overlap_reports/nsys_overlap_busy.nsys-rep gs://856356105879-us-central1-blueprint-config/
 
 
 ####
@@ -47,7 +47,7 @@ gcloud storage cp gs://856356105879-us-central1-blueprint-config/nsys_compare_ov
 
 gcloud storage cp gs://856356105879-us-central1-blueprint-config/nsys_no_overlap.nsys-rep ./
 gcloud storage cp gs://856356105879-us-central1-blueprint-config/nsys_overlap.nsys-rep ./
-
+gcloud storage cp gs://856356105879-us-central1-blueprint-config/nsys_overlap_busy.nsys-rep ./
 ####
 # with stack
 ####
