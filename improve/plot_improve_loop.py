@@ -2,6 +2,7 @@ import csv
 import os
 
 import matplotlib.pyplot as plt
+import numpy as np
 
 
 def load_results(log_path):
@@ -29,33 +30,39 @@ def main():
     output_tokens = sorted({k[2] for k in results.keys()})
     yyj_options = sorted({k[0] for k in results.keys()})
 
+    # 分组柱状图：每个 (input, output) 一组，组内两根柱子对应 yyj_improve_loop=0 和 1
+    categories = [
+        f"in{in_tok}\nout{out_tok}"
+        for in_tok in input_tokens
+        for out_tok in output_tokens
+    ]
+    n_cats = len(categories)
+    n_bars = len(yyj_options)
+    bar_width = 0.35
+    x = np.arange(n_cats)
+    offsets = np.linspace(-bar_width / 2 * (n_bars - 1), bar_width / 2 * (n_bars - 1), n_bars)
+
     plt.style.use("seaborn-v0_8-whitegrid")
-    fig, ax = plt.subplots(figsize=(6, 4))
+    fig, ax = plt.subplots(figsize=(10, 5))
 
-    markers = {16: "o", 32: "s", 64: "^"}
     colors = {0: "#1f77b4", 1: "#d62728"}
+    labels = {0: "yyj_improve_loop=0", 1: "yyj_improve_loop=1"}
 
-    for opt in yyj_options:
+    for i_opt, opt in enumerate(yyj_options):
+        heights = []
         for in_tok in input_tokens:
-            xs = output_tokens
-            ys = [results[(opt, in_tok, out_tok)] for out_tok in output_tokens]
-            label = f"yyj_improve_loop={opt}, input={in_tok}"
-            ax.plot(
-                xs,
-                ys,
-                marker=markers.get(in_tok, "o"),
-                color=colors.get(opt, "#333333"),
-                linestyle="-" if opt == 1 else "--",
-                linewidth=1.5,
-                markersize=5,
-                label=label,
-            )
+            for out_tok in output_tokens:
+                heights.append(results.get((opt, in_tok, out_tok), 0.0))
+        pos = x + offsets[i_opt]
+        ax.bar(pos, heights, bar_width, label=labels.get(opt, f"opt={opt}"), color=colors.get(opt, "#333333"))
 
-    ax.set_xlabel("Output tokens", fontsize=12)
+    ax.set_xticks(x)
+    ax.set_xticklabels(categories, fontsize=9)
+    ax.set_xlabel("(input_tokens, output_tokens)", fontsize=12)
     ax.set_ylabel("Throughput (tokens/s)", fontsize=12)
     ax.set_title("Impact of yyj_improve_loop on Inference Throughput", fontsize=12)
-    ax.legend(fontsize=8)
-    ax.grid(True, linestyle="--", linewidth=0.5, alpha=0.7)
+    ax.legend(fontsize=10)
+    ax.grid(True, axis="y", linestyle="--", linewidth=0.5, alpha=0.7)
 
     fig.tight_layout()
     fig_path = os.path.join(repo_root, "improve", "improve_loop.png")
