@@ -4,7 +4,9 @@ from types import SimpleNamespace
 
 import torch
 
-sys.path.append("../src")
+repo_root = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+src_root = os.path.join(repo_root, "src")
+sys.path.append(src_root)
 from fiddler import FiddlerMixtral  # type: ignore
 
 
