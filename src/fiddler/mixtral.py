@@ -784,27 +784,27 @@ class FiddlerMixtral:
                                 inps_after_experts = inps_after_experts_gpu + inps_after_experts_cpu
                     else:
                         ##############
-                        ### only keep experts who has token to handle
+                        ### vital: only keep experts who has token to handle
                         ##############
                         gpu_experts = [i for i in gpu_experts if top_2s[i].shape[0] > 0]
                         cpu_experts = [i for i in cpu_experts if top_2s[i].shape[0] > 0]
-                        # 串行：先 GPU experts，再 CPU experts
+
                         for i_expert in gpu_experts:
-                            with record_function("yyj:token_dispatch"):
+                            with record_function("token_dispatch_for_gpu"):
                                 top_2_list = top_2s[i_expert].tolist()
                                 idx_list = idxs[i_expert].tolist()
                                 current_state = inps[None, top_2_list].reshape(-1, hidden_dim)
                             if self.is_expert_in_gpu(i_layer, i_expert):
-                                with record_function("yyj:gpu_forward"):
+                                with record_function("run_expert_gpu"):
                                     current_state = experts[i_expert](
                                         current_state, routing_weights[top_2_list, idx_list, None]
                                     )
                             else:
-                                with record_function("yyj:offload_to_gpu"):
+                                with record_function("expert_to_gpu"):
                                     self.expert_placeholder.load_state_dict(
                                         experts[i_expert].state_dict()
                                     )
-                                with record_function("yyj:gpu_forward"):
+                                with record_function("run_expert_gpu"):
                                     current_state = self.expert_placeholder(
                                         current_state, routing_weights[top_2_list, idx_list, None]
                                     )
@@ -816,21 +816,21 @@ class FiddlerMixtral:
                                 )
 
                         for i_expert in cpu_experts:
-                            with record_function("yyj:token_dispatch"):
+                            with record_function("token_dispatch_for_cpu"):
                                 top_2_list = top_2s[i_expert].tolist()
                                 idx_list = idxs[i_expert].tolist()
                                 current_state = inps[None, top_2_list].reshape(-1, hidden_dim)
-                            with record_function("yyj:offload_to_cpu"):
+                            with record_function("routing_weights_to_cpu"):
                                 current_state_cpu = current_state.to("cpu")
                                 routing_weights_cpu = routing_weights[top_2_list, idx_list, None].to("cpu")
-                            with record_function("yyj:cpu_forward"):
+                            with record_function("run_expert_cpu"):
                                 current_state = self.run_expert_at_cpu(
                                     i_layer,
                                     i_expert,
                                     current_state_cpu,
                                     routing_weights_cpu,
                                 )
-                            with record_function("yyj:offload_to_gpu"):
+                            with record_function("expert_activation_to_gpu"):
                                 current_state = current_state.to(self.dev, non_blocking=True)
                             with record_function("yyj:expert_accumulate"):
                                 inps_after_experts.index_add_(
@@ -840,7 +840,7 @@ class FiddlerMixtral:
                                 )
 
             # addition because there's residual connection over moe layer
-            with record_function(f"yyj:layer_{i_layer}_ffn_residual"):
+            with record_function(f"add:layer_{i_layer}_ffn_residual"):
                 inps = inps_residual + inps_after_experts.reshape(original_inps_shape)
 
             # end of one layer
