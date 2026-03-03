@@ -4,7 +4,7 @@ from types import SimpleNamespace
 
 import torch
 
-sys.path.append(os.path.join(os.path.dirname(__file__), "src"))
+sys.path.append("../src")
 from fiddler import FiddlerMixtral  # type: ignore
 
 
