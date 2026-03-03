@@ -663,127 +663,64 @@ class FiddlerMixtral:
                         # end of one expert
 
                 else:
-                    # prefill stage with offloading
-                    expert_mask = torch.nn.functional.one_hot(
-                        selected_experts, num_classes=8
-                    ).permute(2, 1, 0)
-
+                    ##TODO start
+                    # prefill stage with offloading: planning which experts run on CPU vs GPU
+                    with record_function(f"one_hot and permute"):
+                        expert_mask = torch.nn.functional.one_hot(
+                            selected_experts, num_classes=8
+                        ).permute(2, 1, 0)
                     # first, calculate the number of tokens for each expert
-                    idxs, top_2s = [], []
-                    cost_per_expert = np.zeros(
-                        (len(experts), 2), dtype=float
-                    )  # 0: CPU, 1: GPU
-                    for i_expert in range(len(experts)):
-                        idx, top_2 = torch.where(expert_mask[i_expert])
-                        idxs.append(idx)
-                        top_2s.append(top_2)
-                        # expected latency at CPU: number of token * cost_at_cpu
-                        # expected latency at GPU: cost_at_gpu (constant)
-                        cost_per_expert[i_expert, 0] = top_2.shape[0] * self.latency_cpu
-                        cost_per_expert[i_expert, 1] = self.latency_gpu
-                        if self.is_expert_in_gpu(i_layer, i_expert):
-                            # if the expert is in GPU, the latency at GPU is
-                            # approximately 0
-                            cost_per_expert[i_expert, 1] = 0
-                            self.cnt_expert_hit += top_2.shape[0]
-                        self.cnt_expert_all += top_2.shape[0]
-
+                    with record_function(f"caculate cost of cpu/gpu for each expert"):
+                        idxs, top_2s = [], []
+                        cost_per_expert = np.zeros(
+                            (len(experts), 2), dtype=float
+                        )  # 0: CPU, 1: GPU
+                        for i_expert in range(len(experts)):
+                            idx, top_2 = torch.where(expert_mask[i_expert])
+                            idxs.append(idx)
+                            top_2s.append(top_2)
+                            # expected latency at CPU: number of token * cost_at_cpu
+                            # expected latency at GPU: cost_at_gpu (constant)
+                            cost_per_expert[i_expert, 0] = top_2.shape[0] * self.latency_cpu
+                            cost_per_expert[i_expert, 1] = self.latency_gpu
+                            if self.is_expert_in_gpu(i_layer, i_expert):
+                                # if the expert is in GPU, the latency at GPU is
+                                # approximately 0
+                                cost_per_expert[i_expert, 1] = 0
+                                self.cnt_expert_hit += top_2.shape[0]
+                            self.cnt_expert_all += top_2.shape[0]
                     # second, partition experts between CPU and GPU:
                     # - with overlap: minimize max(CPU_total, GPU_total) for balanced parallel
                     # - without overlap: minimize CPU_total + GPU_total for serial
-                    best_config = -1
-                    best_cost = float("inf")
-                    for config in range(1 << len(experts)):
-                        cpu_total = 0.0
-                        gpu_total = 0.0
-                        for i_expert in range(len(experts)):
-                            if (config >> i_expert) & 1:
-                                cpu_total += cost_per_expert[i_expert, 0]
-                            else:
-                                gpu_total += cost_per_expert[i_expert, 1]
-                        cost = (
-                             (cpu_total + gpu_total)
-                        )
-                        if cost < best_cost:
-                            best_cost = cost
-                            best_config = config
-
+                    with record_function(f"decide the best"):
+                        best_config = -1
+                        best_cost = float("inf")
+                        for config in range(1 << len(experts)):
+                            cpu_total = 0.0
+                            gpu_total = 0.0
+                            for i_expert in range(len(experts)):
+                                if (config >> i_expert) & 1:
+                                    cpu_total += cost_per_expert[i_expert, 0]
+                                else:
+                                    gpu_total += cost_per_expert[i_expert, 1]
+                            cost = (
+                                 (cpu_total + gpu_total)
+                            )
+                            if cost < best_cost:
+                                best_cost = cost
+                                best_config = config
                     # then, we can offload the experts according to the best
                     # configuration
-                    cpu_experts = []
-                    gpu_experts = []
-                    for i_expert in range(8):
-                        if (best_config >> i_expert) & 1:
-                            cpu_experts.append(i_expert)
-                        else:
-                            gpu_experts.append(i_expert)
-
-                    if self.overlap and (gpu_experts and cpu_experts):
-                        # feat: GPU 和 CPU 计算并行 — 主线程派发 GPU experts，CPU 线程独立处理 CPU experts，最后相加
-                        with record_function(f"yyj:overlap_layer_{i_layer}_parallel"):
-                            inps_after_experts_gpu = torch.zeros_like(inps, device=self.dev)
-                            inps_after_experts_cpu = torch.zeros_like(inps, device=self.dev)
-
-                            # 复制流等待默认流，GPU 内部隐式保证数据就绪，不阻塞主线程
-                            with record_function("yyj:overlap_wait_stream"):
-                                if self._cpu_copy_stream is not None:
-                                    self._cpu_copy_stream.wait_stream(torch.cuda.current_stream())
-
-                            self._cpu_done_event.clear()
-                            with record_function("yyj:overlap_dispatch"):
-                                self._worker_ctx = {
-                                    "gpu_experts": gpu_experts,
-                                    "cpu_experts": cpu_experts,
-                                    "inps": inps,
-                                    "top_2s": top_2s,
-                                    "idxs": idxs,
-                                    "hidden_dim": hidden_dim,
-                                    "i_layer": i_layer,
-                                    "experts": experts,
-                                    "routing_weights": routing_weights,
-                                    "inps_after_experts_gpu": inps_after_experts_gpu,
-                                    "inps_after_experts_cpu": inps_after_experts_cpu,
-                                }
-                                self._cpu_start_event.set()
-
-                            # 主线程在默认 stream 上异步派发 GPU experts（无单独 GPU 线程，避免 GIL 竞争）
-                            with record_function(f"yyj:overlap_gpu_main_layer_{i_layer}"):
-                                for i_expert in gpu_experts:
-                                    with record_function("yyj:token_dispatch"):
-                                        top_2_list = top_2s[i_expert].tolist()
-                                        idx_list = idxs[i_expert].tolist()
-                                        current_state = inps[None, top_2_list].reshape(-1, hidden_dim)
-                                    if self.is_expert_in_gpu(i_layer, i_expert):
-                                        with record_function("yyj:gpu_forward"):
-                                            current_state = experts[i_expert](
-                                                current_state, routing_weights[top_2_list, idx_list, None]
-                                            )
-                                    else:
-                                        with record_function("yyj:offload_to_gpu"):
-                                            self.expert_placeholder.load_state_dict(
-                                                experts[i_expert].state_dict()
-                                            )
-                                        with record_function("yyj:gpu_forward"):
-                                            current_state = self.expert_placeholder(
-                                                current_state, routing_weights[top_2_list, idx_list, None]
-                                            )
-                                    with record_function("yyj:expert_accumulate"):
-                                        inps_after_experts_gpu.index_add_(
-                                            0,
-                                            top_2s[i_expert].to(self.dev, non_blocking=True),
-                                            current_state.to(self.dev, non_blocking=True),
-                                        )
-
-                            with record_function("yyj:overlap_main_wait"):
-                                self._cpu_done_event.wait()
-
-                            # CPU 线程在独立 stream 上写入了 inps_after_experts_cpu，合并前需同步该 stream
-                            with record_function("yyj:overlap_sync_cpu_stream"):
-                                if self._cpu_copy_stream is not None:
-                                    self._cpu_copy_stream.synchronize()
-                            with record_function("yyj:overlap_merge"):
-                                inps_after_experts = inps_after_experts_gpu + inps_after_experts_cpu
-                    else:
+                    with record_function(f"add chosen expert to list"):
+                        cpu_experts = []
+                        gpu_experts = []
+                        for i_expert in range(8):
+                            if (best_config >> i_expert) & 1:
+                                cpu_experts.append(i_expert)
+                            else:
+                                gpu_experts.append(i_expert)
+                    ##TODO end
+                    if 1:
                         ##############
                         ### vital: only keep experts who has token to handle
                         ##############

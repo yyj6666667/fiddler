@@ -9,4 +9,4 @@ set -euo pipefail
 
 
 cd "/home/yyj/fiddler/benchmarks"
-exec python latency.py --compare-overlap --profile --output-dir "/home/yyj/fiddler/benchmarks/vs_output" "$@"
+exec python latency.py  --profile --output-dir "/home/yyj/fiddler/benchmarks/vs_output" "$@"
