@@ -7,6 +7,6 @@
 
 set -euo pipefail
 
-REPO_ROOT="$(cd "$(dirname "$0")" && pwd)"
-cd "$REPO_ROOT/benchmarks"
-exec python latency.py --compare-overlap --profile --output-dir "${REPO_ROOT}/benchmarks/vs_output" "$@"
+
+cd "/home/yyj/fiddler/benchmarks"
+exec python latency.py --compare-overlap --profile --output-dir "/home/yyj/fiddler/benchmarks/vs_output" "$@"
