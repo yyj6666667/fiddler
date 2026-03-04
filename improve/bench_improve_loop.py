@@ -10,7 +10,7 @@ sys.path.append(src_root)
 from fiddler import FiddlerMixtral  # type: ignore
 
 
-def build_args(model_name: str, yyj_improve_loop: int) -> SimpleNamespace:
+def build_args(model_name: str, yyj_improve_loop: int, yyj_improve_cost: int) -> SimpleNamespace:
     return SimpleNamespace(
         model=model_name,
         cpu_offload=1,
@@ -18,6 +18,7 @@ def build_args(model_name: str, yyj_improve_loop: int) -> SimpleNamespace:
         beam_width=1,
         no_hot=False,
         yyj_improve_loop=bool(yyj_improve_loop),
+        yyj_improve_cost=bool(yyj_improve_cost),
     )
 
 
@@ -31,7 +32,7 @@ def main() -> None:
     model_name = "mistralai/Mixtral-8x7B-v0.1"
 
     os.makedirs(os.path.join(repo_root, "improve"), exist_ok=True)
-    log_path = os.path.join(repo_root, "improve", "improve_loop.log")
+    log_path = os.path.join(repo_root, "improve", "improve_both.log")
 
     # 构造一个足够长的 dummy 文本，依靠 input_token 截断控制长度
     base_text = "hello world " * 256
@@ -43,7 +44,7 @@ def main() -> None:
         )
 
     for opt in yyj_options:
-        args = build_args(model_name, opt)
+        args = build_args(model_name, opt, opt)
         model = FiddlerMixtral(args)
 
         for in_tok in input_tokens:

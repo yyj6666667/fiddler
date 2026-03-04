@@ -22,7 +22,7 @@ def load_results(log_path):
 
 def main():
     repo_root = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
-    log_path = os.path.join(repo_root, "improve", "improve_loop.log")
+    log_path = os.path.join(repo_root, "improve", "improve_both.log")
 
     results = load_results(log_path)
 
@@ -65,7 +65,7 @@ def main():
     ax.grid(True, axis="y", linestyle="--", linewidth=0.5, alpha=0.7)
 
     fig.tight_layout()
-    fig_path = os.path.join(repo_root, "improve", "improve_loop.png")
+    fig_path = os.path.join(repo_root, "improve", "improve_both.png")
     fig.savefig(fig_path, dpi=300)
 
 
