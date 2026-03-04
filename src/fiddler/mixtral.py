@@ -34,6 +34,7 @@ class FiddlerMixtral:
         self.cpu_offload = getattr(args, "cpu_offload", 1)
         self.overlap = getattr(args, "overlap", False)
         self.yyj_improve_loop = getattr(args, "yyj_improve_loop", True)
+        self.yyj_improve_cost = getattr(args, "yyj_improve_cost", False)
         self.beam_width = args.beam_width
         # 专用 CUDA stream：overlap 时供 CPU 线程做 GPU->CPU 拷贝用。
         # 在默认 stream 上 .to("cpu") 会隐式同步整个 GPU，导致与 GPU 专家计算无法重叠；
@@ -670,6 +671,7 @@ class FiddlerMixtral:
                             selected_experts, num_classes=8
                         ).permute(2, 1, 0)
                     # first, calculate the number of tokens for each expert
+                    best_config = 0  # used by yyj_improve_cost branch
                     with record_function(f"caculate cost of cpu/gpu for each expert"):
                         idxs, top_2s = [], []
                         cost_per_expert = np.zeros(
@@ -689,26 +691,34 @@ class FiddlerMixtral:
                                 cost_per_expert[i_expert, 1] = 0
                                 self.cnt_expert_hit += top_2.shape[0]
                             self.cnt_expert_all += top_2.shape[0]
-                    # second, partition experts between CPU and GPU:
-                    # - with overlap: minimize max(CPU_total, GPU_total) for balanced parallel
-                    # - without overlap: minimize CPU_total + GPU_total for serial
-                    with record_function(f"decide the best"):
-                        best_config = -1
-                        best_cost = float("inf")
-                        for config in range(1 << len(experts)):
-                            cpu_total = 0.0
-                            gpu_total = 0.0
-                            for i_expert in range(len(experts)):
-                                if (config >> i_expert) & 1:
-                                    cpu_total += cost_per_expert[i_expert, 0]
-                                else:
-                                    gpu_total += cost_per_expert[i_expert, 1]
-                            cost = (
-                                 (cpu_total + gpu_total)
-                            )
-                            if cost < best_cost:
-                                best_cost = cost
-                                best_config = config
+                            #####
+                            #将decide the best 合并到两行
+                            ####
+                            if self.yyj_improve_cost:
+                                if cost_per_expert[i_expert, 0] < cost_per_expert[i_expert, 1]:
+                                    best_config |= 1 << i_expert
+
+                    if not self.yyj_improve_cost:
+                        # second, partition experts between CPU and GPU (original: enumerate 256 configs)
+                        # - with overlap: minimize max(CPU_total, GPU_total) for balanced parallel
+                        # - without overlap: minimize CPU_total + GPU_total for serial
+                        with record_function(f"decide the best"):
+                            best_config = -1
+                            best_cost = float("inf")
+                            for config in range(1 << len(experts)):
+                                cpu_total = 0.0
+                                gpu_total = 0.0
+                                for i_expert in range(len(experts)):
+                                    if (config >> i_expert) & 1:
+                                        cpu_total += cost_per_expert[i_expert, 0]
+                                    else:
+                                        gpu_total += cost_per_expert[i_expert, 1]
+                                cost = (
+                                     (cpu_total + gpu_total)
+                                )
+                                if cost < best_cost:
+                                    best_cost = cost
+                                    best_config = config
                     # then, we can offload the experts according to the best
                     # configuration
                     with record_function(f"add chosen expert to list"):

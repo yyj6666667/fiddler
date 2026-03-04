@@ -95,6 +95,12 @@ if __name__ == "__main__":
         help="GPU 与 CPU expert 计算并行（仅当 cpu_offload=1 时生效）。",
     )
     parser.add_argument(
+        "--yyj-improve-cost",
+        dest="yyj_improve_cost",
+        action="store_true",
+        help="合并 cost 与 decide best：在算每个 expert cost 时顺带贪心决定 CPU/GPU，省略 256 次枚举。",
+    )
+    parser.add_argument(
         "--profile",
         action="store_true",
         help="启用 PyTorch Profiler：trace 写入 --output-dir（可拖入 chrome://tracing）。",
