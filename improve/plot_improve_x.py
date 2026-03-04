@@ -32,17 +32,22 @@ def main():
 
     # 平均加速比：improve 全开(1) / 全关(0) 的 tps 之比，对所有 (in_tok, out_tok) 取平均
     speedups = []
+    speedup_by_key = {}  # (in_tok, out_tok) -> speedup
     for in_tok in input_tokens:
         for out_tok in output_tokens:
             tps0 = results.get((0, in_tok, out_tok), 0.0)
             tps1 = results.get((1, in_tok, out_tok), 0.0)
             if tps0 > 0 and tps1 >= 0:
-                speedups.append(tps1 / tps0)
+                sp = tps1 / tps0
+                speedups.append(sp)
+                speedup_by_key[(in_tok, out_tok)] = sp
+            else:
+                speedup_by_key[(in_tok, out_tok)] = 0.0
     avg_speedup = np.mean(speedups) if speedups else 0.0
 
     # 分组柱状图：每个 (input, output) 一组，组内两根柱子对应 yyj_improve_loop=0 和 1
     categories = [
-        f"in{in_tok}\nout{out_tok}"
+        f"in{in_tok}\nout{out_tok}\n{speedup_by_key[(in_tok, out_tok)]:.3f}x"
         for in_tok in input_tokens
         for out_tok in output_tokens
     ]
@@ -56,7 +61,7 @@ def main():
     fig, ax = plt.subplots(figsize=(10, 5))
 
     colors = {0: "#1f77b4", 1: "#d62728"}
-    labels = {0: "yyj_improve_loop=0", 1: "yyj_improve_loop=1"}
+    labels = {0: "origin fiddler", 1: "yyj_improve"}
 
     for i_opt, opt in enumerate(yyj_options):
         heights = []
@@ -68,7 +73,7 @@ def main():
 
     ax.set_xticks(x)
     ax.set_xticklabels(categories, fontsize=9)
-    ax.set_xlabel("(input_tokens, output_tokens)", fontsize=12)
+    ax.set_xlabel("(input_tokens, output_tokens, speedup)", fontsize=12)
     ax.set_ylabel("Throughput (tokens/s)", fontsize=12)
     title = f"Impact of yyj_improve on Throughput (avg speedup = {avg_speedup:.3f}x)"
     ax.set_title(title, fontsize=12)
