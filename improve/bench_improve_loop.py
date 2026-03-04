@@ -26,8 +26,8 @@ def main() -> None:
     repo_root = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
     os.chdir(repo_root)
 
-    input_tokens = [16, 32, 64]
-    output_tokens = [16, 32, 64]
+    input_tokens = [16, 32, 64, 128, 256]
+    output_tokens = [16, 32, 64, 128, 256]
     yyj_options = [0, 1]
     model_name = "mistralai/Mixtral-8x7B-v0.1"
 
