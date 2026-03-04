@@ -1,3 +1,21 @@
+#
+gcloud storage cp /home/yyj/fiddler/improve/improve_both.log gs://856356105879-us-central1-blueprint-config/
+##
+gcloud storage cp gs://856356105879-us-central1-blueprint-config/improve_both.log ./
+
+
+
+
+
+
+
+
+
+
+
+
+
+
 ####
 # without stack
 ####

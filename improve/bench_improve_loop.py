@@ -39,7 +39,7 @@ def main() -> None:
 
     with open(log_path, "w", encoding="utf-8") as f:
         f.write(
-            "# yyj_improve_loop 对 inference 性能影响评测\n"
+            "# yyj_improve 对 inference 性能影响评测\n"
             "# columns: yyj_improve_loop,input_token,output_token,prefill_time,decode_time,hit_rate,tokens_per_second\n"
         )
 

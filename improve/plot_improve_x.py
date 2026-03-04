@@ -30,6 +30,16 @@ def main():
     output_tokens = sorted({k[2] for k in results.keys()})
     yyj_options = sorted({k[0] for k in results.keys()})
 
+    # 平均加速比：improve 全开(1) / 全关(0) 的 tps 之比，对所有 (in_tok, out_tok) 取平均
+    speedups = []
+    for in_tok in input_tokens:
+        for out_tok in output_tokens:
+            tps0 = results.get((0, in_tok, out_tok), 0.0)
+            tps1 = results.get((1, in_tok, out_tok), 0.0)
+            if tps0 > 0 and tps1 >= 0:
+                speedups.append(tps1 / tps0)
+    avg_speedup = np.mean(speedups) if speedups else 0.0
+
     # 分组柱状图：每个 (input, output) 一组，组内两根柱子对应 yyj_improve_loop=0 和 1
     categories = [
         f"in{in_tok}\nout{out_tok}"
@@ -60,13 +70,15 @@ def main():
     ax.set_xticklabels(categories, fontsize=9)
     ax.set_xlabel("(input_tokens, output_tokens)", fontsize=12)
     ax.set_ylabel("Throughput (tokens/s)", fontsize=12)
-    ax.set_title("Impact of yyj_improve_loop on Inference Throughput", fontsize=12)
+    title = f"Impact of yyj_improve on Throughput (avg speedup = {avg_speedup:.3f}x)"
+    ax.set_title(title, fontsize=12)
     ax.legend(fontsize=10)
     ax.grid(True, axis="y", linestyle="--", linewidth=0.5, alpha=0.7)
 
     fig.tight_layout()
     fig_path = os.path.join(repo_root, "improve", "improve_both.png")
     fig.savefig(fig_path, dpi=300)
+    print(f"Average speedup (improve on / off): {avg_speedup:.3f}x")
 
 
 if __name__ == "__main__":
