@@ -53,12 +53,12 @@ def main():
     ]
     n_cats = len(categories)
     n_bars = len(yyj_options)
-    bar_width = 0.35
-    x = np.arange(n_cats)
+    bar_width = 0.28
+    x = np.arange(n_cats) * 1.4
     offsets = np.linspace(-bar_width / 2 * (n_bars - 1), bar_width / 2 * (n_bars - 1), n_bars)
 
     plt.style.use("seaborn-v0_8-whitegrid")
-    fig, ax = plt.subplots(figsize=(10, 5))
+    fig, ax = plt.subplots(figsize=(14, 6))
 
     colors = {0: "#1f77b4", 1: "#d62728"}
     labels = {0: "origin fiddler", 1: "yyj_improve"}
@@ -79,8 +79,9 @@ def main():
     ax.set_title(title, fontsize=12)
     ax.legend(fontsize=10)
     ax.grid(True, axis="y", linestyle="--", linewidth=0.5, alpha=0.7)
+    ax.margins(x=0.06, y=0.08)
 
-    fig.tight_layout()
+    fig.tight_layout(pad=1.2)
     fig_path = os.path.join(repo_root, "improve", "improve_both.png")
     fig.savefig(fig_path, dpi=300)
     print(f"Average speedup (improve on / off): {avg_speedup:.3f}x")
