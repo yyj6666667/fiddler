@@ -96,9 +96,19 @@ if __name__ == "__main__":
     )
     parser.add_argument(
         "--yyj-improve-cost",
+        type=int,
+        default=0,
+        choices=[0, 1],
         dest="yyj_improve_cost",
-        action="store_true",
-        help="合并 cost 与 decide best：在算每个 expert cost 时顺带贪心决定 CPU/GPU，省略 256 次枚举。",
+        help="1=合并 cost 与 decide best；0=关闭。",
+    )
+    parser.add_argument(
+        "--yyj-improve-loop",
+        type=int,
+        default=1,
+        choices=[0, 1],
+        dest="yyj_improve_loop",
+        help="1=启用 decode 循环内优化，0=关闭（origin fiddler）。",
     )
     parser.add_argument(
         "--profile",
@@ -322,7 +332,8 @@ if __name__ == "__main__":
 
                     did_profile = True
 
-                    trace_basename = f"fiddler_profiler_trace_no_stack_cpu_offload_{args.cpu_offload}.json"
+                    improve_suffix = "_no_improve" if (args.yyj_improve_loop == 0 and not args.yyj_improve_cost) else ""
+                    trace_basename = f"fiddler_profiler_trace_no_stack_cpu_offload_{args.cpu_offload}{improve_suffix}.json"
                     trace_path = os.path.join(args.output_dir, trace_basename)
                     prof.export_chrome_trace(trace_path)
                     print(

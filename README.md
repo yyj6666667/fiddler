@@ -1,4 +1,4 @@
-* ~17% 性能提升， 嘿嘿
+* ~17% 性能提升，开心
 ![yyj_improve_loop benchmark plot](./improve/improve_both.png)
 
 # 🎻 Fiddler: CPU-GPU Orchestration for Fast Local Inference of MoE Models [[paper]](https://arxiv.org/abs/2402.07033)

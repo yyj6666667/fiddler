@@ -8,4 +8,4 @@ set -euo pipefail
 
 
 cd "/home/yyj/fiddler/benchmarks"
-exec python latency.py --profile --cpu-offload 1 --yyj-improve-cost --output-dir "/home/yyj/fiddler/benchmarks/vs_output" "$@"
+exec python latency.py --profile --cpu-offload 1 --yyj-improve-cost 1 --output-dir "/home/yyj/fiddler/benchmarks/vs_output" "$@"
